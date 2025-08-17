@@ -35,7 +35,7 @@ class CocktailApp(MDApp):
         self.load_cocktails()
         self.logic = CocktailLogic(self.cocktails)
 
-        return Builder.load_file("main.kv")
+        return Builder.load_file("View/main.kv")
 
     def load_cocktails(self):
         with open("cocktails.json", "r") as f:
