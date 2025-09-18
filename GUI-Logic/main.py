@@ -6,7 +6,7 @@ from Controller.app_controller import AppController
 
 class CocktailApp(MDApp):
     def build(self):
-        self.title = "MixMate – Cocktailmixer"
+        self.title = "Mixmate – die automatische Schankanlage"
         self.theme_cls.theme_style = "Dark"
         self.theme_cls.primary_palette = "Teal"
         self.theme_cls.accent_palette = "Cyan"
