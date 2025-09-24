@@ -1,0 +1,35 @@
+#include <Wire.h>
+
+void setup() {
+  Serial.begin(9600);
+  Wire.begin(0x08);  // Adresse muss mit der vom Raspberry übereinstimmen
+  Wire.onReceive(receiveEvent);
+}
+
+void loop() {
+  // nichts hier, alles passiert im receiveEvent
+}
+
+void receiveEvent(int numBytes) {
+  if (numBytes == 5) {  // wir erwarten genau 5 Bytes
+    byte dir = Wire.read();
+    byte h_low = Wire.read();
+    byte h_high = Wire.read();
+    byte d_low = Wire.read();
+    byte d_high = Wire.read();
+
+    int hoehe = (h_high << 8) | h_low;
+    int distanz = (d_high << 8) | d_low;
+
+    String richtung = (dir == 0) ? "Links" : "Rechts";
+
+    // Ausgabe im Serial Monitor
+    Serial.print("Richtung: ");
+    Serial.print(richtung);
+    Serial.print(" | Höhe: ");
+    Serial.print(hoehe);
+    Serial.print(" mm | Distanz: ");
+    Serial.print(distanz);
+    Serial.println(" mm");
+  }
+}
