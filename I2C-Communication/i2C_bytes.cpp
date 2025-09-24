@@ -2,16 +2,18 @@
 
 void setup() {
   Serial.begin(9600);
-  Wire.begin(0x08);  // gleiche Adresse wie am Pi
+  Wire.begin(0x08);  // gleiche Adresse wie beim Pi
   Wire.onReceive(receiveEvent);
 }
 
 void loop() {
-  delay(10);  // kleine Pause, sonst macht loop() unnötig viel
+  delay(10);  // kleine Pause
 }
 
 void receiveEvent(int numBytes) {
-  if (numBytes == 5) {
+  if (numBytes == 6) {  
+    Wire.read(); // Erstes Byte = Command -> ignorieren
+
     byte dir = Wire.read();
     byte h_low = Wire.read();
     byte h_high = Wire.read();
