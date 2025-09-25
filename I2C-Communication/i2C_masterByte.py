@@ -1,23 +1,13 @@
-from smbus2 import SMBus
+from smbus2 import SMBus, i2c_msg
+import struct
 
-ARDUINO_ADDR = 0x08  # gleiche Adresse wie im Arduino
-bus = SMBus(1)       # I²C-Bus 1
+ARDUINO_ADDR = 0x12
 
-def send_data(direction, hoehe, distanz):
-    """
-    direction: 0 = Links, 1 = Rechts
-    hoehe/distanz: int (0-65535)
-    """
-    # Daten vorbereiten
-    data = [
-        direction & 0xFF,
-        hoehe & 0xFF, (hoehe >> 8) & 0xFF,
-        distanz & 0xFF, (distanz >> 8) & 0xFF
-    ]
-    
-    # 0x01 = Dummy-Command-Byte
-    bus.write_i2c_block_data(ARDUINO_ADDR, 0x01, data)
-    print("Gesendet:", [0x01] + data)
+def send_data(hoehe, richtung, distanz):
+    # <HBB = little-endian: 16-bit A, dann 8-bit B, 8-bit C
+    payload = struct.pack('<HBB', int(hoehe), int(bool(richtung)), int(distanz) & 0xFF)
+    with SMBus(1) as bus:
+        bus.i2c_rdwr(i2c_msg.write(ARDUINO_ADDR, payload))
+    print("Gesendet:", list(payload))
 
-# Beispiel: Rechts, Höhe 1234mm, Distanz 5678mm
-send_data(1, 1234, 5678)
+send_data(100, 1, 42)
