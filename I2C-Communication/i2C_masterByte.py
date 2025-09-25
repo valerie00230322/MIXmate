@@ -10,4 +10,4 @@ def send_data(hoehe, richtung, distanz):
         bus.i2c_rdwr(i2c_msg.write(ARDUINO_ADDR, payload))
     print("Gesendet:", list(payload))
 
-send_data(100, 1, 42)
+send_data(140, 1, 42)
