@@ -5,14 +5,12 @@ from kivymd.uix.snackbar import MDSnackbar
 from kivymd.uix.card import MDCard
 from kivymd.uix.boxlayout import MDBoxLayout
 
-from View.screens import WelcomeScreen, LoginScreen, AdminScreen, RecipeScreen
+from View.screens import WelcomeScreen, LoginScreen, AdminScreen, RecipeScreen, AdminLoginScreen
 from Model.recipe_model import RecipeModel
+from Controller.admin_controller import AdminController  # <--- NEU
 
 
 def map_font_style(style: str) -> str:
-    """
-    Mappt neue Material3-Styles auf alte KivyMD 1.2.0 Styles.
-    """
     mapping = {
         "DisplayLarge": "H2",
         "DisplayMedium": "H3",
@@ -37,11 +35,13 @@ class AppController:
     def __init__(self, app):
         self.app = app
         self.recipe_model = RecipeModel()
+        self.admin_controller = AdminController(self)  # <--- NEU
 
         # ScreenManager vorbereiten
         self.sm = ScreenManager(transition=NoTransition())
         self.sm.add_widget(WelcomeScreen(name="welcome"))
         self.sm.add_widget(LoginScreen(name="login"))
+        self.sm.add_widget(AdminLoginScreen(name="admin_login"))  # <--- NEU
         self.sm.add_widget(AdminScreen(name="admin"))
         self.sm.add_widget(RecipeScreen(name="recipes"))
 
@@ -54,6 +54,9 @@ class AppController:
     def go_to_login(self):
         self.sm.current = "login"
 
+    def go_to_admin_login(self):  # <--- NEU
+        self.sm.current = "admin_login"
+
     def go_to_admin(self):
         self.sm.current = "admin"
 
@@ -65,10 +68,16 @@ class AppController:
     # Login
     # -----------------
     def check_login(self, username, password):
-        if username == "admin" and password == "1234":
-            self.go_to_admin()
+        """(Optional) normaler Benutzer-Login – unverändert."""
+        if username == "user" and password == "pass":
+            MDSnackbar(text="User eingeloggt").open()
+            self.go_to_welcome()
         else:
             MDSnackbar(text="Falsche Login-Daten!").open()
+
+    def check_admin_login(self, username, password):  # <--- NEU
+        """Delegiert an AdminController (Rechte & Aktionen dort gebündelt)."""
+        self.admin_controller.login(username, password)
 
     # -----------------
     # Dummy Funktionen
@@ -98,12 +107,10 @@ class AppController:
 
         recipes = self.recipe_model.load_recipes()
         for recipe in recipes:
-            # Zutaten als Liste untereinander
             ingredients_str = "\n".join(
                 f"• {ing['name']} ({ing['amount_ml']} ml)" for ing in recipe["ingredients"]
             )
 
-            # Karte erstellen
             card = MDCard(
                 orientation="vertical",
                 size_hint=(1, None),
@@ -115,10 +122,8 @@ class AppController:
                 ripple_behavior=True,
             )
 
-            # Layout für Text
             box = MDBoxLayout(orientation="vertical", spacing=dp(6))
 
-            # Titel (Rezeptname)
             box.add_widget(
                 MDLabel(
                     text=recipe["name"],
@@ -128,7 +133,6 @@ class AppController:
                 )
             )
 
-            # Zutaten
             box.add_widget(
                 MDLabel(
                     text=ingredients_str,

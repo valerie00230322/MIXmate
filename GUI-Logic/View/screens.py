@@ -15,3 +15,6 @@ class AdminScreen(MDScreen):
 
 class RecipeScreen(MDScreen):
     pass
+
+class AdminLoginScreen(MDScreen):
+    pass

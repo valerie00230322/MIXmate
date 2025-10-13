@@ -38,8 +38,7 @@
         MDRaisedButton:
             text: "Admin Login"
             pos_hint: {"center_x": 0.5}
-            on_release: app.controller.go_to_login()
-
+            on_release: app.controller.go_to_admin_login()
 
 <LoginScreen>:
     MDBoxLayout:
@@ -49,7 +48,7 @@
         md_bg_color: 0.05, 0.07, 0.12, 1
 
         MDLabel:
-            text: "Admin Login"
+            text: "User Login"
             halign: "center"
             font_style: "H4"
             theme_text_color: "Custom"
@@ -76,42 +75,6 @@
             pos_hint: {"center_x": 0.5}
             on_release: app.controller.go_to_welcome()
 
-
-<AdminScreen>:
-    MDBoxLayout:
-        orientation: "vertical"
-        spacing: "20dp"
-        padding: "40dp"
-        md_bg_color: 0.05, 0.07, 0.12, 1
-
-        MDLabel:
-            text: "Admin Dashboard"
-            halign: "center"
-            font_style: "H4"
-            theme_text_color: "Custom"
-            text_color: 1, 1, 1, 1
-
-        MDRaisedButton:
-            text: "Füllstände prüfen"
-            pos_hint: {"center_x": 0.5}
-            on_release: app.controller.on_levels_pressed()
-
-        MDRaisedButton:
-            text: "Reinigung starten"
-            pos_hint: {"center_x": 0.5}
-            on_release: app.controller.on_clean_pressed()
-
-        MDRaisedButton:
-            text: "Logs ansehen"
-            pos_hint: {"center_x": 0.5}
-            on_release: app.controller.on_logs_pressed()
-
-        MDRectangleFlatButton:
-            text: "Logout"
-            pos_hint: {"center_x": 0.5}
-            on_release: app.controller.go_to_welcome()
-
-
 <RecipeScreen>:
     MDBoxLayout:
         orientation: "vertical"
@@ -119,25 +82,3 @@
 
         MDLabel:
             text: "Rezepte"
-            halign: "center"
-            font_style: "H4"
-            theme_text_color: "Custom"
-            text_color: 1, 1, 1, 1
-            size_hint_y: None
-            height: self.texture_size[1] + dp(40)
-
-        MDScrollView:
-            bar_width: dp(8)
-            effect_cls: "ScrollEffect"
-
-            MDBoxLayout:
-                id: recipe_list
-                orientation: "vertical"
-                spacing: dp(20)
-                padding: dp(20)
-                adaptive_height: True
-
-        MDRectangleFlatButton:
-            text: "Zurück"
-            pos_hint: {"center_x": 0.5}
-            on_release: app.controller.go_to_welcome()

@@ -13,6 +13,7 @@ class CocktailApp(MDApp):
 
         # Lade KV-Dateien
         Builder.load_file("View/screens.kv")
+        Builder.load_file("View/admin.kv")
 
         # Controller initialisieren
         self.controller = AppController(app=self)
