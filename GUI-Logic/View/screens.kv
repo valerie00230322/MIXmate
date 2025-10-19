@@ -82,3 +82,54 @@
 
         MDLabel:
             text: "Rezepte"
+            halign: "center"
+            font_style: "H5"
+            theme_text_color: "Custom"
+            text_color: 1, 1, 1, 1
+            size_hint_y: None
+            height: "56dp"
+
+        MDScrollView:
+            MDBoxLayout:
+                id: recipe_list           # <---- WICHTIG
+                orientation: "vertical"
+                adaptive_height: True
+                padding: "16dp"
+                spacing: "12dp"
+
+<AdminLoginScreen>:
+    MDBoxLayout:
+        orientation: "vertical"
+        spacing: "20dp"
+        padding: "40dp"
+        md_bg_color: 0.05, 0.07, 0.12, 1
+
+        MDLabel:
+            text: "Admin Login"
+            halign: "center"
+            font_style: "H4"
+            theme_text_color: "Custom"
+            text_color: 1, 1, 1, 1
+            size_hint_y: None
+            height: "56dp"
+
+        MDTextField:
+            id: admin_user
+            hint_text: "Benutzername"
+            mode: "rectangle"
+
+        MDTextField:
+            id: admin_pass
+            hint_text: "Passwort"
+            password: True
+            mode: "rectangle"
+
+        MDRaisedButton:
+            text: "Login"
+            pos_hint: {"center_x": 0.5}
+            on_release: app.controller.check_admin_login(admin_user.text, admin_pass.text)
+
+        MDRectangleFlatButton:
+            text: "Zurück"
+            pos_hint: {"center_x": 0.5}
+            on_release: app.controller.go_to_welcome()

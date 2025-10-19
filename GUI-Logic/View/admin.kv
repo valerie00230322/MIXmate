@@ -1,3 +1,9 @@
+#:import MDSwitch kivymd.uix.selectioncontrol.MDSwitch
+#:import MDCard kivymd.uix.card.MDCard
+#:import MDLabel kivymd.uix.label.MDLabel
+#:import MDBoxLayout kivymd.uix.boxlayout.MDBoxLayout
+#:import MDRaisedButton kivymd.uix.button.MDRaisedButton
+
 <AdminScreen>:
     MDBoxLayout:
         orientation: "vertical"
@@ -11,6 +17,31 @@
             font_style: "H4"
             theme_text_color: "Custom"
             text_color: 1, 1, 1, 1
+
+        # --- NEU: Simulation-Toggle (unter der Überschrift) ---
+        MDCard:
+            size_hint: 1, None
+            height: "72dp"
+            padding: "16dp"
+            radius: [12, 12, 12, 12]
+            md_bg_color: 0.13, 0.16, 0.22, 1
+
+            MDBoxLayout:
+                orientation: "horizontal"
+                spacing: "16dp"
+
+                MDLabel:
+                    text: "Simulation (I²C emulieren)"
+                    font_style: "Subtitle1"
+                    theme_text_color: "Custom"
+                    text_color: 1,1,1,1
+                    halign: "left"
+                    valign: "middle"
+
+                MDSwitch:
+                    id: sim_switch                      # wird vom Controller synchronisiert
+                    pos_hint: {"center_y": .5}
+                    on_active: app.controller.set_simulation(self.active)
 
         MDRaisedButton:
             text: "Rezepte exportieren"
