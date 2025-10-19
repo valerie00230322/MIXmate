@@ -2,9 +2,13 @@
 from smbus2 import SMBus, i2c_msg
 import struct
 
-ARDUINO_ADDR = 0x12
+ARDUINO_ADDR = 0x13
 
 # Befehls-IDs
+#status, abfragen, beim fahren
+#dann befehl Pumpe und Zeit
+
+# Umrechnen der zeit 
 CMD_FAHREN = 0       # Payload: int32 distanz_mm
 CMD_HOME   = 1       # Payload: —
 CMD_STATUS = 2       # Payload: —; Antwort: int32 pos_mm, uint8 state, uint8 last_cmd
