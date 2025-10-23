@@ -1,7 +1,0 @@
-{
-  "host": "172.21.104.81",
-  "user": "cocktailuser",
-  "password": "test123",
-  "database": "cocktaildb",
-  "port": 3306
-}

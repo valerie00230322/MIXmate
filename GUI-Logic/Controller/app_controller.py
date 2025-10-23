@@ -4,7 +4,7 @@ from kivy.uix.screenmanager import ScreenManager, NoTransition
 from kivy.metrics import dp
 from kivy.clock import Clock
 from kivymd.uix.label import MDLabel
-from kivymd.uix.snackbar import MDSnackbar, MDSnackbarSupportingText
+from kivymd.uix.snackbar import MDSnackbar
 from kivymd.uix.card import MDCard
 from kivymd.uix.boxlayout import MDBoxLayout
 
@@ -68,12 +68,12 @@ class AppController:
         """Zeigt eine MD3-Snackbar. Funktioniert auch, wenn aus Worker-Threads aufgerufen."""
         def _show(_dt=0):
             MDSnackbar(
-                MDSnackbarSupportingText(text=text),
+                MDLabel(text=text),
                 y=dp(y_dp),
                 pos_hint={"center_x": 0.5},
                 size_hint_x=width_ratio,
             ).open()
-
+            
         # Wenn wir nicht im Hauptthread sind, auf den UI-Thread schedulen
         if threading.current_thread() is threading.main_thread():
             _show()
