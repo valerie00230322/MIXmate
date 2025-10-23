@@ -9,10 +9,12 @@ ARDUINO_ADDR = 0x13
 #dann befehl Pumpe und Zeit
 
 # Umrechnen der zeit 
-CMD_FAHREN = 0       # Payload: int32 distanz_mm
-CMD_HOME   = 1       # Payload: —
-CMD_STATUS = 2       # Payload: —; Antwort: int32 pos_mm, uint8 state, uint8 last_cmd
-CMD_PUMPE  = 3       # Payload: uint8 pump_no (1-5), uint16 zeit_s
+CMD_FAHREN      = 0       # Payload: int32 distanz_mm
+CMD_HOME        = 1       # Payload: —
+CMD_STATUS      = 2       # Payload: —; Antwort: int32 pos_mm, uint8 state, uint8 last_cmd
+CMD_PUMPE       = 3       # Payload: uint8 pump_no (1-5), uint16 zeit_s
+CMD_BELADEN     = 4       # Payload: —
+CMD_ENTLADEN    = 5       # Payload: —
 
 # Erwartete Antwortlänge für Status
 STATUS_REPLY_LEN = 6  # 4 (pos_mm) + 1 (state) + 1 (last_cmd)
@@ -41,6 +43,16 @@ def cmd_home():
     payload = struct.pack('<B', CMD_HOME)
     i2c_write(payload)
     print(f"[SEND] Home -> {list(payload)}")
+
+def cmd_beladen():
+    payload = struct.pack('<B', CMD_BELADEN)
+    i2c_write(payload)
+    print(f"[SEND] Beladen -> {list(payload)}")
+
+def cmd_entladen():
+    payload = struct.pack('<B', CMD_ENTLADEN)
+    i2c_write(payload)
+    print(f"[SEND] Entladen -> {list(payload)}")
 
 def cmd_status():
     payload = struct.pack('<B', CMD_STATUS)
@@ -77,11 +89,13 @@ def prompt_loop():
     print("  1: Home               -> ohne Parameter")
     print("  2: Statusabfrage      -> liest pos_mm,int state,last_cmd")
     print("  3: Pumpe (nr,sek)     -> nr=1..5, sek=0..65535")
+    print("  4: Beladen            -> ohne Parameter")
+    print("  5: Entladen           -> ohne Parameter")
     print("Beenden: q\n")
 
     while True:
         try:
-            s = input("CMD (0/1/2/3): ").strip().lower()
+            s = input("CMD (0/1/2/3/4/5): ").strip().lower()
             if s == 'q':
                 break
             if s == '':
@@ -103,9 +117,12 @@ def prompt_loop():
                 p = int(input("Pumpennummer (1-5): ").strip())
                 t = int(input("Zeit in Sekunden (0-65535): ").strip())
                 cmd_pumpe(p, t)
-
+            elif cmd == CMD_BELADEN:
+                cmd_beladen()
+            elif cmd == CMD_ENTLADEN:
+                cmd_entladen()
             else:
-                print("Unbekannter CMD. Erlaubt: 0,1,2,3.")
+                print("Unbekannter CMD. Erlaubt: 0,1,2,3,4,5.")
 
         except ValueError as e:
             print(f"Ungültige Eingabe: {e}")

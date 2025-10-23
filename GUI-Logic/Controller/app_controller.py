@@ -2,8 +2,9 @@
 
 from kivy.uix.screenmanager import ScreenManager, NoTransition
 from kivy.metrics import dp
+from kivy.clock import Clock
 from kivymd.uix.label import MDLabel
-from kivymd.uix.snackbar import Snackbar
+from kivymd.uix.snackbar import MDSnackbar, MDSnackbarSupportingText
 from kivymd.uix.card import MDCard
 from kivymd.uix.boxlayout import MDBoxLayout
 
@@ -61,6 +62,25 @@ class AppController:
         self.sm.add_widget(RecipeScreen(name="recipes"))
 
     # -----------------
+    # UI: Snackbar (MD3) – thread-sicher
+    # -----------------
+    def _snack(self, text: str, *, width_ratio: float = 0.5, y_dp: int = 24) -> None:
+        """Zeigt eine MD3-Snackbar. Funktioniert auch, wenn aus Worker-Threads aufgerufen."""
+        def _show(_dt=0):
+            MDSnackbar(
+                MDSnackbarSupportingText(text=text),
+                y=dp(y_dp),
+                pos_hint={"center_x": 0.5},
+                size_hint_x=width_ratio,
+            ).open()
+
+        # Wenn wir nicht im Hauptthread sind, auf den UI-Thread schedulen
+        if threading.current_thread() is threading.main_thread():
+            _show()
+        else:
+            Clock.schedule_once(_show, 0)
+
+    # -----------------
     # Navigation
     # -----------------
     def go_to_welcome(self):
@@ -85,10 +105,10 @@ class AppController:
     # -----------------
     def check_login(self, username, password):
         if username == "user" and password == "pass":
-            Snackbar(text="User eingeloggt").open()
+            self._snack("User eingeloggt")
             self.go_to_welcome()
         else:
-            Snackbar(text="Falsche Login-Daten!").open()
+            self._snack("Falsche Login-Daten!")
 
     def check_admin_login(self, username, password):
         self.admin_controller.login(username, password)
@@ -105,11 +125,11 @@ class AppController:
             self.pump_controller.enable_simulation()
             # Optional: im Sim-Modus Logging einschalten (hilfreich zum Testen)
             self.pump_controller.set_log_i2c(True)
-            Snackbar(text="Simulation: EIN (I²C wird emuliert)").open()
+            self._snack("Simulation: EIN (I²C wird emuliert)")
         else:
             self.pump_controller.disable_simulation()
             self.pump_controller.set_log_i2c(False)
-            Snackbar(text="Simulation: AUS (echte I²C-Hardware erwartet)").open()
+            self._snack("Simulation: AUS (echte I²C-Hardware erwartet)")
 
     def sync_admin_view(self):
         """
@@ -133,24 +153,24 @@ class AppController:
         def _run():
             try:
                 result = self.pump_controller.preflight_check()
-                Snackbar(
-                    text=f"Preflight: Status={result.get('status_bit')}  Distanz={result.get('distance_mm')} mm"
-                ).open()
+                self._snack(
+                    f"Preflight: Status={result.get('status_bit')}  Distanz={result.get('distance_mm')} mm"
+                )
             except Exception as e:
-                Snackbar(text=f"Preflight-Fehler: {e}").open()
+                self._snack(f"Preflight-Fehler: {e}")
         threading.Thread(target=_run, daemon=True).start()
 
     def pour_cocktail(self, cocktail_name: str):
         """Schritt 2: Dispense-Plan aus DB holen und nacheinander dosieren (threaded)."""
         plan = self.recipe_model.get_dispense_plan(cocktail_name)
         if not plan:
-            Snackbar(text=f"Cocktail nicht gefunden: {cocktail_name}").open()
+            self._snack(f"Cocktail nicht gefunden: {cocktail_name}")
             return
 
         unresolved = [step for step in plan if not step.get("pump_id")]
         if unresolved:
             names = ", ".join(s["ingredient"] for s in unresolved)
-            Snackbar(text=f"Keine Pumpe gesetzt für: {names}").open()
+            self._snack(f"Keine Pumpe gesetzt für: {names}")
             return
 
         def _run():
@@ -167,9 +187,9 @@ class AppController:
                         amount_ml=float(step["amount_ml"]),
                         pump_channel=step.get("pump_channel"),
                     )
-                Snackbar(text=f"🍹 {cocktail_name} fertig!").open()
+                self._snack(f"🍹 {cocktail_name} fertig!")
             except Exception as e:
-                Snackbar(text=f"Dosierfehler bei {cocktail_name}: {e}").open()
+                self._snack(f"Dosierfehler bei {cocktail_name}: {e}")
 
         threading.Thread(target=_run, daemon=True).start()
 
@@ -182,16 +202,16 @@ class AppController:
 
     def on_calibration_pressed(self):
         # Platzhalter für Kalibrierfluss (Mengen ausgeben, Zeit/Volumen messen, flow_ml_per_s anpassen)
-        Snackbar(text="Kalibrierung gestartet (Platzhalter)").open()
+        self._snack("Kalibrierung gestartet (Platzhalter)")
 
     def on_levels_pressed(self):
-        Snackbar(text="Füllstände geprüft").open()
+        self._snack("Füllstände geprüft")
 
     def on_clean_pressed(self):
-        Snackbar(text="Reinigung gestartet").open()
+        self._snack("Reinigung gestartet")
 
     def on_logs_pressed(self):
-        Snackbar(text="Logs angezeigt").open()
+        self._snack("Logs angezeigt")
 
     # -----------------
     # Rezepte laden (View-Befüllung)
@@ -220,7 +240,7 @@ class AppController:
 
             # Karte klickbar: startet Cocktail
             def _on_release(instance, name=recipe["name"]):
-                self.pour_cocktail(name)
+              self.pour_cocktail(name)
             card.bind(on_release=_on_release)
 
             box = MDBoxLayout(orientation="vertical", spacing=dp(6))
