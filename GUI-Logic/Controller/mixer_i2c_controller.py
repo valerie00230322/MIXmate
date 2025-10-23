@@ -4,6 +4,16 @@ import struct
 
 ARDUINO_ADDR = 0x13
 
+# TODO: 
+# Cocktail auswählen 
+# Muss wissen, welche Pumpe für welche Zutat zuständig ist
+# cmd_fahren, um zur Pumpe x,y zu fahren
+# Status von Arduino abfragen (cmd_status)
+# Muss wissen, wie lange die Pumpe laufen muss, um die Menge auszugeben
+# Status von Arduino abfragen (cmd_status)
+# cmd_pumpe, um Pumpe x für y Sekunden zu aktivieren
+# Status von Arduino abfragen (cmd_status)
+
 # Befehls-IDs
 #status, abfragen, beim fahren
 #dann befehl Pumpe und Zeit
@@ -137,3 +147,4 @@ def prompt_loop():
 
 if __name__ == "__main__":
     prompt_loop()
+#
