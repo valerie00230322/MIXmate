@@ -1,215 +1,168 @@
 # Controller/pump_controller.py
-
 from __future__ import annotations
+import math
+import sqlite3
+from pathlib import Path
+from time import sleep, monotonic
+from typing import Optional, Dict, Any, List
 
-from dataclasses import replace
-from typing import Optional, Iterable, Dict, Any
-
-# Passe die Import-Pfade ggf. an dein Projekt an:
-from Model.pump_model import PumpModel, Pump
+from Controller.i2c_driver import I2CDriver, I2CConfig
 
 
 class PumpController:
     """
-    Dünner Controller um das PumpModel:
-    - Bietet Preflight (Status/Distanz)
-    - Dosiert Menge in ml über PREPARE -> DISPENSE
-    - Kann eine ganze Rezept-Liste (Dispense-Plan) abarbeiten
-    - NEU: Toggle für Simulation & I²C-Logging (für Admin-View)
+    Orchestriert Statuscheck + Dosierung.
+    Nutzt Pumpen-/Zuordnungsdaten aus derselben DB wie das RecipeModel.
     """
 
     def __init__(
         self,
+        *,
         db_filename: str = "mixmate-oida.db",
         i2c_bus: int = 1,
-        status_addr: int = 0x10,     # I²C-Adresse deines Status-/Sensor-Controllers
-        debug: bool = False,
-        dev_mode: bool = False,      # <-- NEU: Simulation beim Start
-        log_i2c: bool = False,       # <-- NEU: I²C-DB-Logging beim Start
-    ) -> None:
-        self.pm = PumpModel(db_filename=db_filename, i2c_bus=i2c_bus, )
-        # Start-Flags setzen (nutzt PumpModel-API falls vorhanden, sonst Fallback auf Attribute)
-        self._set_dev_mode_internal(dev_mode)
-        self._set_log_i2c_internal(log_i2c)
+        arduino_addr: int = 0x13,
+        dev_mode: bool = False,
+        log_i2c: bool = False,
+    ):
+        self.db_path = Path(__file__).resolve().parents[1] / "Model" / db_filename
+        self._conn = sqlite3.connect(self.db_path)
+        self._conn.execute("PRAGMA foreign_keys = ON;")
+        self._conn.row_factory = sqlite3.Row
 
-        self.status_addr = status_addr
-        self.debug = debug
+        self.i2c = I2CDriver(I2CConfig(bus=i2c_bus, addr=arduino_addr), dev_mode=dev_mode, log_i2c=log_i2c)
+        self._init_tables()
 
-    # ---------------------------------------------------------
-    # NEU: Toggle-API für View/Controller
-    # ---------------------------------------------------------
-    def enable_simulation(self) -> None:
-        """Simulation (Dummy-I²C) einschalten."""
-        self._set_dev_mode_internal(True)
+        # Tuning
+        self.poll_interval_s = 0.2
+        self.start_idle_timeout_s = 8.0
+        self.post_pump_idle_timeout_s = 6.0
 
-    def disable_simulation(self) -> None:
-        """Simulation ausschalten (echte I²C-Hardware wird genutzt)."""
-        self._set_dev_mode_internal(False)
+    # ---------- public toggles ----------
+    def enable_simulation(self): self.i2c.set_dev_mode(True)
+    def disable_simulation(self): self.i2c.set_dev_mode(False)
+    def is_simulation(self) -> bool: return self.i2c.dev_mode
+    def set_log_i2c(self, enabled: bool): self.i2c.set_log(enabled)
 
-    def set_log_i2c(self, enabled: bool) -> None:
-        """I²C-Frame-Logging in DB an/aus."""
-        self._set_log_i2c_internal(bool(enabled))
+    # ---------- schema for pumps (einmalig) ----------
+    def _init_tables(self):
+        cur = self._conn.cursor()
+        cur.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS Pumps (
+                pump_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                channel INTEGER NOT NULL,          -- 1..5: Arduino-Kanal
+                flow_ml_per_s REAL NOT NULL DEFAULT 1.0
+            );
 
-    def is_simulation(self) -> bool:
-        """Aktueller Simulationszustand (für Switch im View)."""
-        return bool(getattr(self.pm, "dev_mode", False))
+            CREATE TABLE IF NOT EXISTS PumpAssignments (
+                ingredient_id INTEGER NOT NULL UNIQUE,
+                pump_id INTEGER NOT NULL,
+                FOREIGN KEY (ingredient_id) REFERENCES Ingredients(ingredient_id) ON DELETE CASCADE,
+                FOREIGN KEY (pump_id)      REFERENCES Pumps(pump_id) ON DELETE RESTRICT
+            );
+            """
+        )
+        self._conn.commit()
 
-    def is_logging(self) -> bool:
-        """Aktueller Logging-Zustand (falls du auch einen Logging-Switch anzeigst)."""
-        return bool(getattr(self.pm, "log_i2c", False))
+    # ---------- db utils ----------
+    def _get_pump(self, pump_id: int) -> Optional[sqlite3.Row]:
+        cur = self._conn.cursor()
+        cur.execute("SELECT * FROM Pumps WHERE pump_id=?", (pump_id,))
+        return cur.fetchone()
 
-    # interne Setter, nutzen bevorzugt die Methoden aus dem Model, sonst Attribute
-    def _set_dev_mode_internal(self, enabled: bool) -> None:
-        if hasattr(self.pm, "set_dev_mode"):
-            self.pm.set_dev_mode(enabled)
-        else:
-            self.pm.dev_mode = bool(enabled)
+    def _time_for(self, pump_id: int, amount_ml: float) -> int:
+        pump = self._get_pump(pump_id)
+        if not pump:
+            raise ValueError(f"Pumpe {pump_id} nicht gefunden")
+        flow = max(float(pump["flow_ml_per_s"]), 0.0001)
+        seconds = amount_ml / flow
+        # runde auf ganze Sekunden (nach oben), min 1, max 65535
+        t = int(max(1, math.ceil(seconds)))
+        return min(t, 65535)
 
-    def _set_log_i2c_internal(self, enabled: bool) -> None:
-        if hasattr(self.pm, "set_log_i2c"):
-            self.pm.set_log_i2c(enabled)
-        else:
-            self.pm.log_i2c = bool(enabled)
+    # ---------- status helpers ----------
+    def _wait_until_idle(self, timeout_s: float) -> Dict[str, Any]:
+        """Wartet bis Arduino 'idle' (state==0) meldet oder timeout."""
+        t0 = monotonic()
+        last = {}
+        while monotonic() - t0 <= timeout_s:
+            last = self.i2c.status()
+            if last.get("state", 1) == 0:
+                return last
+            sleep(self.poll_interval_s)
+        raise TimeoutError(f"Arduino bleibt busy (state={last.get('state')}) > {timeout_s:.1f}s")
 
-    # ---------------------------------------------------------
-    # Schritt 1: Preflight / Plattform-Abfrage
-    # ---------------------------------------------------------
+    # ---------- public api ----------
     def preflight_check(self) -> Dict[str, Any]:
+        st = self.i2c.status()
+        return {
+            "ok": st.get("state", 255) == 0,
+            "status_bit": st.get("state"),
+            "distance_mm": st.get("pos_mm"),
+            "last_cmd": st.get("last_cmd"),
+        }
+
+    def dispense_by_id(self, *, pump_id: int, amount_ml: float, pump_channel: Optional[int] = None):
         """
-        Fragt Statusbit & Distanz vom (zentralen) Status-Controller ab.
-        Rückgabe: {"status_bit": int, "distance_mm": float|None}
+        Führt EINE Dosierung aus:
+        - wartet auf Idle,
+        - konvertiert ml -> s (flow der Pumpe),
+        - schickt CMD_PUMPE(channel, sek),
+        - wartet die Zeit und prüft wieder auf Idle.
         """
-        status_bit, distance_mm, _raw = self.pm.query_platform(addr=self.status_addr)
-        if self.debug:
-            print(f"[Preflight] status_bit={status_bit} distance_mm={distance_mm}")
-        return {"status_bit": int(status_bit), "distance_mm": distance_mm}
+        pump = self._get_pump(pump_id)
+        if not pump:
+            raise ValueError(f"Pumpe {pump_id} nicht in DB")
+        channel = int(pump_channel) if pump_channel else int(pump["channel"])
+        if not (1 <= channel <= 5):
+            raise ValueError("pump_channel muss 1..5 sein")
 
-    # ---------------------------------------------------------
-    # Schritt 2: Dosieren
-    # ---------------------------------------------------------
-    def dispense_by_id(
-        self,
-        pump_id: int,
-        amount_ml: float,
-        pump_channel: Optional[int] = None,
-        cocktail_id: Optional[int] = None,
-        ingredient_id: Optional[int] = None,
-    ) -> int:
+        # 1) vor Start idle?
+        self._wait_until_idle(self.start_idle_timeout_s)
+
+        # 2) Zeit berechnen
+        seconds = self._time_for(pump_id, float(amount_ml))
+
+        # 3) feuern
+        self.i2c.pumpe(channel, seconds)
+
+        # 4) grob warten (damit Befehle nicht überlappen)
+        sleep(max(0.1, seconds))
+
+        # 5) nachlaufend idle-check (kurz)
+        try:
+            self._wait_until_idle(self.post_pump_idle_timeout_s)
+        except TimeoutError:
+            # nicht fatal — viele Sketche melden kein busy während Pumpen
+            pass
+
+    # ---------- demo/helper ----------
+    def ensure_demo_pumps_if_needed(self):
         """
-        Dosiert amount_ml aus Pumpe pump_id.
-        Optional: pump_channel überschreibt den im Pumpenstamm hinterlegten Kanal.
-        Rückgabe: run_id (PumpRuns)
+        Lege 5 Pumpen an (Kanäle 1..5) mit Standard-Flow, wenn noch keine existiert.
+        Weise optional die ersten 5 Ingredients automatisch zu (nur wenn keine Zuordnung existiert).
         """
-        pump = self._pump_by_id(pump_id)
-        if pump is None:
-            raise RuntimeError(f"Pumpe mit ID {pump_id} nicht gefunden.")
-        if not pump.is_enabled:
-            raise RuntimeError(f"Pumpe '{pump.name}' ist deaktiviert.")
-
-        # Kanal ggf. zur Laufzeit überschreiben (ohne DB ändern)
-        if pump_channel is not None and pump_channel != pump.channel:
-            pump = replace(pump, channel=int(pump_channel))
-
-        if self.debug:
-            print(f"[Dispense] pump={pump.name}({pump.pump_id}) ch={pump.channel} amount_ml={amount_ml}")
-
-        run_id = self.pm.dispense(
-            pump=pump,
-            target_ml=float(amount_ml),
-            cocktail_id=cocktail_id,
-            ingredient_id=ingredient_id,
-        )
-        return run_id
-
-    def dispense_by_name(
-        self,
-        pump_name: str,
-        amount_ml: float,
-        pump_channel: Optional[int] = None,
-        cocktail_id: Optional[int] = None,
-        ingredient_id: Optional[int] = None,
-    ) -> int:
-        """
-        Wie dispense_by_id, aber mit Pumpenname.
-        """
-        pump = self.pm.get_pump_by_name(pump_name)
-        if pump is None:
-            raise RuntimeError(f"Pumpe '{pump_name}' nicht gefunden.")
-        if not pump.is_enabled:
-            raise RuntimeError(f"Pumpe '{pump.name}' ist deaktiviert.")
-
-        if pump_channel is not None and pump_channel != pump.channel:
-            pump = replace(pump, channel=int(pump_channel))
-
-        if self.debug:
-            print(f"[DispenseByName] pump={pump.name} ch={pump.channel} amount_ml={amount_ml}")
-
-        return self.pm.dispense(
-            pump=pump,
-            target_ml=float(amount_ml),
-            cocktail_id=cocktail_id,
-            ingredient_id=ingredient_id,
-        )
-
-    def dispense_recipe(
-        self,
-        plan: Iterable[Dict[str, Any]],
-        require_all_mapped: bool = True,
-    ) -> None:
-        """
-        Abarbeitung eines Dispense-Plans, z. B. direkt aus RecipeModel.get_dispense_plan():
-        plan-Elemente: {"ingredient", "amount_ml", "pump_id", "pump_channel"?}
-        """
-        # Validierung (optional strikt)
-        if require_all_mapped:
-            missing = [s for s in plan if not s.get("pump_id")]
-            if missing:
-                names = ", ".join(s.get("ingredient", "?") for s in missing)
-                raise RuntimeError(f"Dispense-Plan unvollständig (keine Pumpe gesetzt für: {names})")
-
-        for step in plan:
-            pump_id = step.get("pump_id")
-            amount_ml = float(step.get("amount_ml", 0))
-            channel = step.get("pump_channel")
-            if pump_id is None:
-                if self.debug:
-                    print(f"[DispenseRecipe] SKIP (kein pump_id) -> {step}")
-                continue
-            if amount_ml <= 0:
-                if self.debug:
-                    print(f"[DispenseRecipe] SKIP (amount<=0) -> {step}")
-                continue
-
-            if self.debug:
-                print(f"[DispenseRecipe] {step.get('ingredient')}: {amount_ml} ml via pump {pump_id} ch={channel}")
-
-            self.dispense_by_id(
-                pump_id=pump_id,
-                amount_ml=amount_ml,
-                pump_channel=channel,
+        cur = self._conn.cursor()
+        cur.execute("SELECT COUNT(*) AS c FROM Pumps;")
+        if cur.fetchone()["c"] == 0:
+            cur.executemany(
+                "INSERT INTO Pumps (name, channel, flow_ml_per_s) VALUES (?, ?, ?)",
+                [(f"Pump {i}", i, 20.0) for i in range(1, 6)]  # <- Flow grob 20 ml/s als Default
             )
+            self._conn.commit()
 
-    # ---------------------------------------------------------
-    # Hilfsroutinen
-    # ---------------------------------------------------------
-    def ensure_demo_pumps_if_needed(self) -> None:
-        """
-        Legt Beispielpumpen an, wenn noch keine existieren (praktisch für Dev/Tests).
-        """
-        pumps = self.pm.list_pumps()
-        if pumps:
-            return
-        # Beispielwerte – passe sie an deine Hardware an
-        self.pm.add_or_update_pump("Vodka-Pumpe", i2c_address=0x12, channel=1, flow_ml_per_s=20.0, enabled=True)
-        self.pm.add_or_update_pump("Rum-Pumpe",   i2c_address=0x13, channel=2, flow_ml_per_s=18.5, enabled=True)
-        if self.debug:
-            print("[DemoPumps] Zwei Beispielpumpen angelegt.")
-
-    def _pump_by_id(self, pump_id: int) -> Optional[Pump]:
-        """
-        Sucht eine Pumpe per ID (PumpModel hat standardmäßig nur get_by_name/list).
-        """
-        for p in self.pm.list_pumps():
-            if p.pump_id == pump_id:
-                return p
-        return None
+        # auto-assign, falls noch KEINE einzige Zuordnung existiert
+        cur.execute("SELECT COUNT(*) AS c FROM PumpAssignments;")
+        if cur.fetchone()["c"] == 0:
+            # nimm die ersten 5 Zutaten (alphabetisch) und mappe sie 1:1 auf Kanäle 1..5
+            cur.execute("SELECT ingredient_id, name FROM Ingredients ORDER BY name LIMIT 5;")
+            ingredients = cur.fetchall()
+            for idx, row in enumerate(ingredients, start=1):
+                cur.execute("SELECT pump_id FROM Pumps WHERE channel=?", (idx,))
+                pump_id = cur.fetchone()["pump_id"]
+                cur.execute(
+                    "INSERT OR IGNORE INTO PumpAssignments (ingredient_id, pump_id) VALUES (?, ?)",
+                    (row["ingredient_id"], pump_id)
+                )
+            self._conn.commit()
