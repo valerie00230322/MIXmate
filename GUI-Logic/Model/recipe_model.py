@@ -1,16 +1,15 @@
 # Model/recipe_model.py
 import sqlite3
 from pathlib import Path
-import json
 
 
 class RecipeModel:
-    def __init__(self, db_filename="mixmate-oida.db", legacy_json="recipes.json"):
+    def __init__(self, db_filename="mixmate-oida.db"):
         # DB im Model-Ordner
         self.db_path = Path(__file__).resolve().parent / db_filename
-        self.legacy_json_path = Path(__file__).resolve().parent / legacy_json
         self._init_db()
-        self._migrate_from_legacy_json_if_present()
+        # Nur Seeding, keine JSON-Migration
+        self._seed_demo_data_if_empty()
 
     # ---------------- Internals ----------------
     def _connect(self):
@@ -49,7 +48,7 @@ class RecipeModel:
             ON CocktailIngredients(cocktail_id, ingredient_id);
 
             --------------------------------------------------------------------
-            -- Pumpen & Zuordnungen (neu)
+            -- Pumpen & Zuordnungen
             --------------------------------------------------------------------
             CREATE TABLE IF NOT EXISTS Pumps (
                 pump_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,27 +66,105 @@ class RecipeModel:
             """)
             conn.commit()
 
-    def _migrate_from_legacy_json_if_present(self):
-        """Falls noch eine recipes.json existiert, einmalig in die DB übernehmen."""
-        if self.legacy_json_path.exists():
-            try:
-                with self.legacy_json_path.open("r", encoding="utf-8") as f:
-                    data = json.load(f)
-                # Nur migrieren, wenn DB leer ist:
-                with self._connect() as conn:
-                    cur = conn.cursor()
-                    cur.execute("SELECT COUNT(*) FROM Cocktails;")
-                    if cur.fetchone()[0] == 0:
-                        self.save_recipes(data)
-                        print(f"✅ Rezepte aus {self.legacy_json_path.name} migriert.")
-            except Exception as e:
-                print(f"⚠️ Fehler bei JSON-Migration: {e}")
+    # ---------------- Demo-Seeding (ohne JSON) ----------------
+    def _seed_demo_data_if_empty(self) -> None:
+        """
+        Befüllt die DB beim ersten Start mit Demo-Cocktails, Pumpen & Zuordnungen.
+        Idempotent: existierende Einträge bleiben unberührt.
+        """
+        with self._connect() as conn:
+            cur = conn.cursor()
+
+            cur.execute("SELECT COUNT(*) FROM Cocktails;")
+            n_cocktails = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM Pumps;")
+            n_pumps = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM PumpAssignments;")
+            n_assign = cur.fetchone()[0]
+
+        # 1) Cocktails + Zutaten nur einmalig anlegen
+        if n_cocktails == 0:
+            demo_recipes = [
+                {
+                    "name": "Daiquiri",
+                    "ingredients": [
+                        {"name": "Rum",           "amount_ml": 60},
+                        {"name": "Limettensaft",  "amount_ml": 30},
+                        {"name": "Zuckersirup",   "amount_ml": 15},
+                    ],
+                },
+                {
+                    "name": "Gin Tonic",
+                    "ingredients": [
+                        {"name": "Gin",          "amount_ml": 50},
+                        {"name": "Tonic Water",  "amount_ml": 120},
+                    ],
+                },
+                {
+                    "name": "Gimlet",
+                    "ingredients": [
+                        {"name": "Gin",           "amount_ml": 60},
+                        {"name": "Limettensaft",  "amount_ml": 15},
+                        {"name": "Zuckersirup",   "amount_ml": 15},
+                    ],
+                },
+            ]
+            self.save_recipes(demo_recipes)
+            print("Demo-Cocktails eingespielt.")
+
+        # 2) 5 Pumpen (Kanäle 1..5) mit groben Flow-Raten
+        if n_pumps == 0:
+            self.upsert_pump(name="Pump Rum",        channel=1, flow_ml_per_s=18.0)
+            self.upsert_pump(name="Pump Limette",    channel=2, flow_ml_per_s=20.0)
+            self.upsert_pump(name="Pump Sirup",      channel=3, flow_ml_per_s=15.0)
+            self.upsert_pump(name="Pump Gin",        channel=4, flow_ml_per_s=18.0)
+            self.upsert_pump(name="Pump TonicWater", channel=5, flow_ml_per_s=25.0)
+            print("Demo-Pumpen (Kanäle 1–5) angelegt.")
+
+        # 3) Zuordnungen (Zutat -> Pumpe)
+        if n_assign == 0:
+            mapping = {
+                "Rum":          "Pump Rum",
+                "Limettensaft": "Pump Limette",
+                "Zuckersirup":  "Pump Sirup",
+                "Gin":          "Pump Gin",
+                "Tonic Water":  "Pump TonicWater",
+            }
+            # gezielt mappen (falls Zutaten/Pumpen existieren)
+            assigned = 0
+            for ing_name, pump_name in mapping.items():
+                try:
+                    self.set_pump_for_ingredient(ingredient_name=ing_name, pump_name=pump_name)
+                    assigned += 1
+                except Exception:
+                    pass
+
+            # Fallback: falls immer noch keine einzige Zuordnung existiert,
+            # ordne alphabetisch die ersten 5 Zutaten den Kanälen 1..5 zu.
+            with self._connect() as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT COUNT(*) FROM PumpAssignments;")
+                now_assign = cur.fetchone()[0]
+                if now_assign == 0:
+                    cur.execute("SELECT ingredient_id, name FROM Ingredients ORDER BY name LIMIT 5;")
+                    ingredients = cur.fetchall()
+                    for idx, row in enumerate(ingredients, start=1):
+                        cur.execute("SELECT pump_id FROM Pumps WHERE channel=?", (idx,))
+                        prow = cur.fetchone()
+                        if not prow:
+                            continue
+                        cur.execute(
+                            "INSERT OR IGNORE INTO PumpAssignments (ingredient_id, pump_id) VALUES (?, ?)",
+                            (row["ingredient_id"], prow["pump_id"])
+                        )
+                    conn.commit()
+                    print("Demo-Zuordnungen (alphabetisch 1:1 auf Kanäle 1–5) erstellt.")
+                elif assigned > 0:
+                    print(f"{assigned} Demo-Zuordnungen gesetzt.")
 
     # ---------------- Öffentliche API ----------------
     def load_recipes(self):
-        """Gibt eine Liste wie früher zurück:
-        [{ "name": str, "ingredients": [{ "name": str, "amount_ml": float }, ...] }, ...]
-        """
+        """[{ "name": str, "ingredients": [{ "name": str, "amount_ml": float }, ...] }, ...]"""
         with self._connect() as conn:
             cur = conn.cursor()
             cur.execute("SELECT cocktail_id, name FROM Cocktails ORDER BY name;")
@@ -105,18 +182,14 @@ class RecipeModel:
             return cocktails
 
     def save_recipes(self, recipes):
-        """Ersetzt NICHT die DB, sondern fügt hinzu/aktualisiert (wie vorher).
-        Erwartet dieselbe Struktur wie dein altes JSON.
-        """
+        """Fügt Cocktails/Zutaten hinzu bzw. aktualisiert Mengen (kein Full-Replace)."""
         with self._connect() as conn:
             cur = conn.cursor()
             for r in recipes:
-                # Cocktail anlegen (falls neu)
                 cur.execute("INSERT OR IGNORE INTO Cocktails (name) VALUES (?)", (r["name"],))
                 cur.execute("SELECT cocktail_id FROM Cocktails WHERE name = ?", (r["name"],))
                 cocktail_id = cur.fetchone()["cocktail_id"]
 
-                # Zutaten + Zuordnung
                 for ing in r.get("ingredients", []):
                     ing_name = ing["name"]
                     amount = float(ing.get("amount_ml", 0))
@@ -125,7 +198,6 @@ class RecipeModel:
                     cur.execute("SELECT ingredient_id FROM Ingredients WHERE name = ?", (ing_name,))
                     ingredient_id = cur.fetchone()["ingredient_id"]
 
-                    # upsert über UNIQUE-Index (cocktail_id, ingredient_id)
                     cur.execute("""
                         INSERT INTO CocktailIngredients (cocktail_id, ingredient_id, quantity_required)
                         VALUES (?, ?, ?)
@@ -135,7 +207,6 @@ class RecipeModel:
             conn.commit()
 
     def get_recipe_by_name(self, name):
-        """Gibt ein einzelnes Rezept anhand des Namens zurück."""
         name_lc = (name or "").lower()
         for r in self.load_recipes():
             if r["name"].lower() == name_lc:
@@ -143,73 +214,22 @@ class RecipeModel:
         return None
 
     def add_recipe(self, recipe):
-        """Fügt ein einzelnes Rezept hinzu (wie bisher)."""
         self.save_recipes([recipe])
 
     def delete_recipe(self, name):
-        """Löscht einen Cocktail anhand des Namens."""
         with self._connect() as conn:
             cur = conn.cursor()
             cur.execute("DELETE FROM Cocktails WHERE name = ?", (name,))
             conn.commit()
 
-    # ----------------------------------------------------------
-    # JSON Import / Export
-    # ----------------------------------------------------------
-    def export_recipes_to_json(self, out_path: Path | None = None) -> Path:
-        """
-        Exportiert alle Rezepte aus der DB in eine JSON-Datei.
-        Standard: Model/recipes.json (self.legacy_json_path)
-        Rückgabe: Pfad zur geschriebenen Datei.
-        """
-        if out_path is None:
-            out_path = self.legacy_json_path
-
-        data = self.load_recipes()
-        out_path.write_text(
-            json.dumps(data, indent=4, ensure_ascii=False),
-            encoding="utf-8"
-        )
-        print(f"✅ Rezepte exportiert nach: {out_path}")
-        return out_path
-
-    def import_recipes_from_json(self, in_path: Path | None = None, replace: bool = False) -> None:
-        """
-        Importiert Rezepte aus einer JSON-Datei in die DB.
-        - Standard: Model/recipes.json (self.legacy_json_path)
-        - replace=True: löscht vorher alle Cocktails & Zuordnungen (Ingredients bleiben bestehen)
-        """
-        if in_path is None:
-            in_path = self.legacy_json_path
-        if not in_path.exists():
-            raise FileNotFoundError(f"Datei nicht gefunden: {in_path}")
-
-        data = json.loads(in_path.read_text(encoding="utf-8"))
-
-        if replace:
-            with self._connect() as conn:
-                conn.execute("DELETE FROM CocktailIngredients;")
-                conn.execute("DELETE FROM Cocktails;")
-                conn.commit()
-
-        self.save_recipes(data)
-        print(f"✅ Rezepte importiert von: {in_path}")
-
-    # ----------------------------------------------------------
-    # Pumpen / Zuordnungen (NEU)
-    # ----------------------------------------------------------
+    # ---------------- Pumpen / Zuordnungen ----------------
     def list_pumps(self):
-        """Liste aller Pumpen mit Kanal und Flowrate (ml/s)."""
         with self._connect() as conn:
             cur = conn.cursor()
             cur.execute("SELECT pump_id, name, channel, flow_ml_per_s FROM Pumps ORDER BY channel;")
             return [dict(r) for r in cur.fetchall()]
 
     def upsert_pump(self, *, name: str, channel: int, flow_ml_per_s: float = 20.0):
-        """
-        Legt eine Pumpe an oder aktualisiert sie per Name.
-        channel: 1..5 (Arduino-Kanal), flow_ml_per_s > 0
-        """
         if not (1 <= int(channel) <= 5):
             raise ValueError("channel muss 1..5 sein")
         with self._connect() as conn:
@@ -223,7 +243,6 @@ class RecipeModel:
             conn.commit()
 
     def set_pump_for_ingredient(self, *, ingredient_name: str, pump_name: str):
-        """Zutat -> Pumpe zuordnen (beide per Name)."""
         with self._connect() as conn:
             cur = conn.cursor()
             cur.execute("SELECT ingredient_id FROM Ingredients WHERE name=?", (ingredient_name,))
@@ -246,19 +265,6 @@ class RecipeModel:
             conn.commit()
 
     def get_dispense_plan(self, cocktail_name: str):
-        """
-        Liefert eine Liste von Schritten:
-        [
-          {
-            "ingredient": str,
-            "amount_ml": float,
-            "pump_id": int | None,
-            "pump_channel": int | None,
-            "flow_ml_per_s": float | None
-          },
-          ...
-        ]
-        """
         with self._connect() as conn:
             cur = conn.cursor()
             cur.execute("SELECT cocktail_id FROM Cocktails WHERE name=?", (cocktail_name,))
