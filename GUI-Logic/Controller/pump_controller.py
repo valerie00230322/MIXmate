@@ -131,11 +131,12 @@ class PumpController:
         sleep(max(0.1, seconds))
 
         # 5) nachlaufend idle-check (kurz)
+                # 3) feuern
         try:
-            self._wait_until_idle(self.post_pump_idle_timeout_s)
-        except TimeoutError:
-            # nicht fatal — viele Sketche melden kein busy während Pumpen
-            pass
+            self.i2c.pumpe(channel, seconds)
+        except Exception as e:
+            raise RuntimeError(f"I²C-Fehler beim Start der Pumpe {pump_id} (Kanal {channel}): {e}")
+
 
     # ---------- demo/helper ----------
     def ensure_demo_pumps_if_needed(self):
@@ -166,3 +167,13 @@ class PumpController:
                     (row["ingredient_id"], pump_id)
                 )
             self._conn.commit()
+
+    # --- öffentliches Busy-Warten (für AppController) ---
+    def wait_until_idle(self, timeout_s: float | None = None):
+        """
+        Wartet bis der Arduino idle meldet (state==0) oder wirft TimeoutError.
+        Nutzt intern dieselbe Logik wie vor Dosierschritten.
+        """
+        if timeout_s is None:
+            timeout_s = self.start_idle_timeout_s
+        return self._wait_until_idle(timeout_s)

@@ -8,7 +8,13 @@ from kivymd.uix.snackbar import MDSnackbar
 from kivymd.uix.card import MDCard
 from kivymd.uix.boxlayout import MDBoxLayout
 
-from View.screens import WelcomeScreen, LoginScreen, AdminScreen, RecipeScreen, AdminLoginScreen
+from View.screens import (
+    WelcomeScreen,
+    LoginScreen,
+    AdminScreen,
+    RecipeScreen,
+    AdminLoginScreen,
+)
 from Model.recipe_model import RecipeModel
 from Controller.admin_controller import AdminController
 from Controller.pump_controller import PumpController
@@ -43,14 +49,13 @@ class AppController:
         self.recipe_model = RecipeModel()
         self.admin_controller = AdminController(self)
 
-        # PumpController: falls du Simulation als Default willst, gib dev_mode=True/log_i2c=True mit
+        # PumpController – bei Bedarf dev_mode/log_i2c als Default aktivieren
         self.pump_controller = PumpController(
             # db_filename="mixmate-oida.db",
             # i2c_bus=1,
-            # status_addr=0x10,
-            # debug=False,
-            # dev_mode=True,   # <- einkommentieren, wenn Simulation beim Start aktiv sein soll
-            # log_i2c=True,    # <- optionales I²C-Logging
+            # arduino_addr=0x13,
+            # dev_mode=True,    # Simulation ohne Hardware
+            # log_i2c=True,     # I²C-Transfers in Konsole loggen
         )
 
         # ScreenManager vorbereiten
@@ -60,6 +65,9 @@ class AppController:
         self.sm.add_widget(AdminLoginScreen(name="admin_login"))
         self.sm.add_widget(AdminScreen(name="admin"))
         self.sm.add_widget(RecipeScreen(name="recipes"))
+
+        # optionaler Lock, damit nicht parallel gemixt wird
+        self._pour_lock = threading.Lock()
 
     # -----------------
     # UI: Snackbar (MD3) – thread-sicher
@@ -73,7 +81,7 @@ class AppController:
                 pos_hint={"center_x": 0.5},
                 size_hint_x=width_ratio,
             ).open()
-            
+
         # Wenn wir nicht im Hauptthread sind, auf den UI-Thread schedulen
         if threading.current_thread() is threading.main_thread():
             _show()
@@ -149,7 +157,7 @@ class AppController:
     # Pumpen-Aktionen
     # -----------------
     def preflight_check(self):
-        """Schritt 1: Statusbit + Distanz anfragen und anzeigen (threaded, blockiert UI nicht)."""
+        """Statusbit + Distanz abfragen und per Snackbar anzeigen (threaded)."""
         def _run():
             try:
                 result = self.pump_controller.preflight_check()
@@ -161,35 +169,59 @@ class AppController:
         threading.Thread(target=_run, daemon=True).start()
 
     def pour_cocktail(self, cocktail_name: str):
-        """Schritt 2: Dispense-Plan aus DB holen und nacheinander dosieren (threaded)."""
-        plan = self.recipe_model.get_dispense_plan(cocktail_name)
-        if not plan:
-            self._snack(f"Cocktail nicht gefunden: {cocktail_name}")
-            return
-
-        unresolved = [step for step in plan if not step.get("pump_id")]
-        if unresolved:
-            names = ", ".join(s["ingredient"] for s in unresolved)
-            self._snack(f"Keine Pumpe gesetzt für: {names}")
-            return
-
+        """
+        Ablauf beim Antippen eines Cocktails:
+        1) Nicht parallel dosieren (Lock).
+        2) Vor Start: Arduino-Status prüfen -> wenn busy, warten (max 60s).
+        3) Dispense-Plan laden & validieren.
+        4) Schrittweise dosieren (PumpController macht ml->s und Status-Checks vor jedem Schritt).
+        """
         def _run():
+            # Nur eine Dosierung gleichzeitig
+            if not self._pour_lock.acquire(blocking=False):
+                self._snack("Mixer ist gerade beschäftigt.")
+                return
             try:
-                # optional für Dev: Demo-Pumpen anlegen, falls DB leer
+                # 1) Vorstart: warte, bis der Arduino frei ist
+                self._snack("Prüfe Arduino-Status …")
+                try:
+                    # wartet via i2c.status() auf state==0, sonst TimeoutError
+                    self.pump_controller.wait_until_idle(timeout_s=60.0)
+                except Exception as e:
+                    self._snack(f"Arduino bleibt beschäftigt/unerreichbar: {e}")
+                    return
+
+                # 2) Dispense-Plan aus DB
+                plan = self.recipe_model.get_dispense_plan(cocktail_name)
+                if not plan:
+                    self._snack(f"Cocktail nicht gefunden: {cocktail_name}")
+                    return
+
+                unresolved = [s for s in plan if not s.get("pump_id")]
+                if unresolved:
+                    namen = ", ".join(s["ingredient"] for s in unresolved)
+                    self._snack(f"Keine Pumpe zugeordnet für: {namen}")
+                    return
+
+                # 3) (Optional) Demo-Pumpen anlegen, falls DB leer ist
                 self.pump_controller.ensure_demo_pumps_if_needed()
 
-                # optional vor dem Ausgießen: Preflight
-                # self.preflight_check()
-
+                # 4) Schrittweise dosieren
                 for step in plan:
+                    ing = step["ingredient"]
+                    ml = float(step["amount_ml"])
+                    self._snack(f"{ing}: {ml:g} ml …")
                     self.pump_controller.dispense_by_id(
                         pump_id=int(step["pump_id"]),
-                        amount_ml=float(step["amount_ml"]),
+                        amount_ml=ml,
                         pump_channel=step.get("pump_channel"),
                     )
-                self._snack(f"🍹 {cocktail_name} fertig!")
+
+                self._snack(f"{cocktail_name} fertig!")
             except Exception as e:
                 self._snack(f"Dosierfehler bei {cocktail_name}: {e}")
+            finally:
+                self._pour_lock.release()
 
         threading.Thread(target=_run, daemon=True).start()
 
@@ -240,7 +272,7 @@ class AppController:
 
             # Karte klickbar: startet Cocktail
             def _on_release(instance, name=recipe["name"]):
-              self.pour_cocktail(name)
+                self.pour_cocktail(name)
             card.bind(on_release=_on_release)
 
             box = MDBoxLayout(orientation="vertical", spacing=dp(6))
