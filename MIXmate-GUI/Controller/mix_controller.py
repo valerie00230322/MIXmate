@@ -2,10 +2,8 @@ from Model.mix_model import MixModel
 
 class MixController:
     def __init__(self):
-        self.model = MixModel()   # <-- Model hier erzeugen
+        self.model = MixModel()
 
-class MixController:
-    def mix_cocktail(self, cocktail_id):
+    def mix_cocktail(self, cocktail_id: int):
         recipe = self.model.get_ingredients_for_cocktail(cocktail_id)
-        
-
+        print("Rezept gefunden:", recipe)
