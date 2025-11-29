@@ -5,7 +5,7 @@ class MixModel:
     def __init__(self, db_path=None):
         if db_path is None:
             base = os.path.dirname(os.path.dirname(__file__))
-            db_path = os.path.join(base, "Database", "MIX.db")
+            db_path = os.path.join(base, "Database", "MIXmate.db")
 
         print("DB-Pfad:", db_path)
 
@@ -16,14 +16,13 @@ class MixModel:
         print("Tabellen:", self.cursor.fetchall())
 
     def get_ingredients_for_cocktail(self, cocktail_id):
-        """
-        Liefert alle Zutaten zu einer cocktail_id.
-        """
         self.cursor.execute("""
-            SELECT ingredient, amount, order_index
-            FROM cocktails
-            WHERE cocktail_id = ?
-            ORDER BY order_index ASC
+            SELECT i.name, ci.amount_ml, ci.order_index
+            FROM cocktail_ingredients ci
+            JOIN ingredients i ON i.ingredient_id = ci.ingredient_id
+            WHERE ci.cocktail_id = ?
+            ORDER BY ci.order_index ASC
         """, (cocktail_id,))
-        
+
         return self.cursor.fetchall()
+
