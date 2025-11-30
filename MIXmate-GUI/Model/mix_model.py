@@ -17,12 +17,30 @@ class MixModel:
 
     def get_ingredients_for_cocktail(self, cocktail_id):
         self.cursor.execute("""
-            SELECT i.name, ci.amount_ml, ci.order_index
+            SELECT
+                i.name, 
+                ci.amount_ml, 
+                ci.order_index,
+                p.pump_number,
+                p.flow_rate_ml_s,
+                p.position_steps
             FROM cocktail_ingredients ci
             JOIN ingredients i ON i.ingredient_id = ci.ingredient_id
             WHERE ci.cocktail_id = ?
             ORDER BY ci.order_index ASC
         """, (cocktail_id,))
 
-        return self.cursor.fetchall()
+        rows= self.cursor.fetchall()
+        result= []
+        for name, amount_ml, order_index, pump_number, flow_rate_ml_s, position_steps in rows:
+            result.append({
+                "name": name,
+                "amount_ml": amount_ml,
+                "order_index": order_index,
+                "pump_number": pump_number,
+                "flow_rate_ml_s": flow_rate_ml_s,
+                "position_steps": position_steps
+            })
+            
+        return result
 
