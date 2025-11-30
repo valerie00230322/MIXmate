@@ -8,5 +8,11 @@ class MixController:
 
     def mix_cocktail(self, cocktail_id: int):
         recipe = self.model.get_ingredients_for_cocktail(cocktail_id)
+        # in db nachschauen, ob es das rezept gibt
+        if recipe is None:
+            print(f"Kein Rezept für Cocktail ID {cocktail_id} gefunden.")
+            return None
+        # wenn rezept gefunden, dann mischen
+        
         print("Rezept gefunden:", recipe)
         return recipe
