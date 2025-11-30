@@ -15,7 +15,7 @@ class MixModel:
         self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
         print("Tabellen:", self.cursor.fetchall())
 
-    def get_ingredients_for_cocktail(self, cocktail_id):
+    def get_full_mix_data(self, cocktail_id):
         self.cursor.execute("""
             SELECT
                 i.name, 
@@ -41,6 +41,6 @@ class MixModel:
                 "flow_rate_ml_s": flow_rate_ml_s,
                 "position_steps": position_steps
             })
-            
+
         return result
 
