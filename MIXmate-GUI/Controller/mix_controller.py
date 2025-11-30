@@ -1,5 +1,5 @@
 from Model.mix_model import MixModel
-
+from Controller.i2c_controller import move_to, pump
 ### hier wird nur das mixen gesteuert
 
 class MixController:
