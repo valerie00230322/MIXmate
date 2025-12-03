@@ -8,3 +8,6 @@ class MixEngine:
     def mix_cocktail(self, cocktail_id: int, factor: float = 1.0):
         # factor = Portionsgröße, z.B. 1.0 = normal, 2.0 = doppelt, 0.5 = halb
         mix_data = self.model.get_full_mix_data(cocktail_id)
+
+        print(f"[Engine] Mix-Daten für Cocktail ID {cocktail_id} erhalten: {mix_data}")
+        
