@@ -1,6 +1,7 @@
 from Services.mix_engine import MixEngine
 from Services.status_service import MixStatus
 
+# Controller Klasse für die Steuerung der Mix-Logik
 class MixController:
     def __init__(self):
         self.engine = MixEngine()
