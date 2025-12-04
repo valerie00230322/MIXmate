@@ -10,8 +10,6 @@
 7. Senden der Zeit und der Pumpennummer für die erste Zutat über I2C
 8. danach kommt die nächste Zutat und es wird für diese Schritt 3-7 wiederholt
 
-![alt text](image.png)
-
 ## Statuscodes
 
 Bei jeder Statusabfrage - **CMD_STATUS = 2** - I2C bekommt man folgende Nachrichten:
@@ -30,3 +28,35 @@ Statusabfrage hat 5 Bytes.
 - _Glas heruntergefallen_
 - _Schlitten klemmt_
 - _evtl. Flasche ist leer_
+
+## MVC Ablauf
+
+MIXmate/
+│
+├── app.py                          # Startpunkt des Programms
+│
+├── View/
+│   └── console_view.py             # CLI oder GUI-View
+│
+├── Controller/
+│   └── mix_controller.py           # Koordiniert Mix-Vorgang + Statusabfragen
+│
+├── Services/                       # Business-Logic (= dein "Logic"-Ordner)
+│   ├── mix_engine.py               # enthält die Mix-Algorithmen
+│   ├── status_service.py           # verwaltet Status der Maschine
+│   └── recipe_service.py           # lädt/validiert Rezepte
+│
+├── Hardware/                       # direkte Hardware-Ansteuerung
+│   ├── i2c_adapter.py              # Low-Level I2C Zugriff
+│   └── pump_driver.py              # Pumpensteuerung (ruft I2C an)
+│
+├── Model/
+│   ├── cocktail.py                 # Cocktail-Datenmodell
+│   ├── ingredient.py               # Zutatenmodell
+│   └── database.py                 # Datenbankzugriff (SQLite etc.)
+│
+└── Database/
+    └── mixmate.db                  # tatsächliche SQLite-DB
+
+
+![alt text](image.png)
