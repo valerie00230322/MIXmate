@@ -1,8 +1,8 @@
 from Controller.mix_controller import MixController
 
 class ConsoleView:
-    def __init__(self):
-        self.controller = MixController()
+    def __init__(self, controller):
+        self.controller = controller
 
     def run(self):
         while True:
@@ -40,5 +40,3 @@ class ConsoleView:
         status = self.controller.get_status()
         print("\nAktueller Status:", status, "\n")
 
-if __name__ == "__main__":
-    ConsoleView().run()

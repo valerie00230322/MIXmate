@@ -31,7 +31,7 @@ def i2c_write(payload: bytes, read_len: int = 0) -> bytes:
             bus.i2c_rdwr(write_msg)
             return b""
 
-
+    
 def cmd_fahr(args):
     dist = int(args.dist)
     if not -128 <= dist <= 127:
