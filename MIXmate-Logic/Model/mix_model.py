@@ -1,25 +1,30 @@
 import sqlite3
 import os
+
 class MixModel:
 
     def __init__(self, db_path=None):
+        # Wenn kein Pfad angegeben wurde → Standardpfad nutzen
         if db_path is None:
             base = os.path.dirname(os.path.dirname(__file__))
             db_path = os.path.join(base, "Database", "MIXmate.db")
 
         print("DB-Pfad:", db_path)
 
-        self.connection = sqlite3.connect(db_path)
+        # Pfad speichern - wichtig!!
+        self.db_path = db_path
+
+        # Eine einzige DB-Verbindung verwenden
+        self.connection = sqlite3.connect(self.db_path)
+        self.connection.row_factory = sqlite3.Row
         self.cursor = self.connection.cursor()
 
+        # Tabellen anzeigen (nur zum Debuggen)
         self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
         print("Tabellen:", self.cursor.fetchall())
-        
-#Liefert alle Zutaten, die zum Mixen benötigt werden
+
+
     def get_full_mix_data(self, cocktail_id):
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
 
         query = """
         SELECT
@@ -41,8 +46,12 @@ class MixModel:
         ORDER BY ci.order_index ASC;
         """
 
-        cur.execute(query, (cocktail_id,))
-        rows = cur.fetchall()
-        conn.close()
+        self.cursor.execute(query, (cocktail_id,))
+        rows = self.cursor.fetchall()
 
+        # Falls nichts gefunden : None zurückgeben
+        if not rows:
+            return None
+
+        # Jede Zeile wird zu dict
         return [dict(row) for row in rows]
