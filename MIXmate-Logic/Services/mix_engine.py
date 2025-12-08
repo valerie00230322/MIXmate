@@ -32,10 +32,7 @@ class MixEngine:
             ingredient = item["ingredient_name"]
             amount_ml = item["amount_ml"] * factor
             pump_number = item["pump_number"]
-
-            # wichtig: Spaltenname wie in deiner DB
             flow_rate = item["flow_rate_ml_s"]
-
             position_steps = item["position_steps"]
 
             print(f"[MixEngine] Mische {amount_ml} ml von {ingredient} "
