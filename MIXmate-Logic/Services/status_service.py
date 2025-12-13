@@ -91,3 +91,20 @@ class StatusService:
 
         # Timeout erreicht
         return False
+
+
+    def wait_until_idle_cached(self, get_status_fn, timeout_s: float = 10.0, poll_s: float = 0.2) -> bool:
+        start = time.time()
+
+        while time.time() - start < timeout_s:
+            status = get_status_fn()
+
+            if not status.get("ok"):
+                return False
+
+            if not status.get("busy"):
+                return True
+
+            time.sleep(poll_s)
+
+        return False
