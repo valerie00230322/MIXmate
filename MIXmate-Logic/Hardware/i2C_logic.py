@@ -31,7 +31,7 @@ class i2C_logic:
             simulation = True
 
         self.simulation = simulation
-
+        
         # Simulation speichert eigenen Zustand
         self.sim_position = 0
         self.sim_busy = False
@@ -57,15 +57,20 @@ class i2C_logic:
             print(f"[SIM I2C] sende {list(payload)}, lese {read_len} Byte")
             return b"\x01" * read_len
 
-        write_msg = i2c_msg.write(I2C_ADDR, payload)
+        try:
+            write_msg = i2c_msg.write(I2C_ADDR, payload)
 
-        if read_len > 0:
-            read_msg = i2c_msg.read(I2C_ADDR, read_len)
-            self.bus.i2c_rdwr(write_msg, read_msg)
-            return bytes(read_msg)
+            if read_len > 0:
+                read_msg = i2c_msg.read(I2C_ADDR, read_len)
+                self.bus.i2c_rdwr(write_msg, read_msg)
+                return bytes(read_msg)
 
-        self.bus.i2c_rdwr(write_msg)
-        return b""
+            self.bus.i2c_rdwr(write_msg)
+            return b""
+        except Exception as e:
+            print(f"[I2C] Schreibfehler: {e}")
+            return b""
+
 
 
     def move_to_position(self, position: int):
@@ -107,25 +112,12 @@ class i2C_logic:
 
 
     def get_current_position(self):
-        if self.simulation:
-            print(f"[SIM] Status: busy={self.sim_busy}, pos={self.sim_position}")
-            return self.sim_position
+        raw = self.getstatus_raw()
+        if len(raw) != 5:
+            print("[I2C] Keine gültige Statusantwort.")
+            return None
+        return int.from_bytes(raw[2:4], "little", signed=True)
 
-        self.i2c_write(bytes([CMD_STATUS]), read_len=1)
-
-        read_msg = i2c_msg.read(I2C_ADDR, 5)
-        self.bus.i2c_rdwr(read_msg)
-        data = bytes(read_msg)
-
-        if len(data) != 5:
-            print("Statuspaket zu kurz.")
-            return 0
-
-        busy = bool(data[0])
-        pos = int.from_bytes(data[1:], "little", signed=True)
-
-        print(f"[I2C] Status: busy={busy}, pos={pos}")
-        return pos
 
 
     def activate_pump(self, pump_id: int, seconds: int):
@@ -158,7 +150,33 @@ class i2C_logic:
             self.sim_entladen_active = True
             time.sleep(1)
             self.sim_entladen_active = False
+            self.sim_beladen_active = False   
             print("[SIM] Entladen fertig")
             return
 
         self.i2c_write(bytes([CMD_ENTLADEN]), read_len=1)
+   
+    def getstatus_raw(self) -> bytes:
+        if self.simulation:
+            busy = 1 if self.sim_busy else 0
+            band = 1 if self.sim_beladen_active else 0
+            pos = int(self.sim_position) & 0xFFFF
+            homing = 1  # ok
+
+            return bytes([busy, band, pos & 0xFF, (pos >> 8) & 0xFF, homing])
+
+        try:
+            _ = self.i2c_write(bytes([CMD_STATUS]), read_len=1) 
+            read_msg = i2c_msg.read(I2C_ADDR, 5)
+            self.bus.i2c_rdwr(read_msg)
+            return bytes(read_msg)
+        except Exception as e:
+            print(f"[I2C] Status lesen fehlgeschlagen: {e}")
+            return b""
+
+    def close(self):
+        if not self.simulation:
+            try:
+                self.bus.close()
+            except Exception:
+                pass
