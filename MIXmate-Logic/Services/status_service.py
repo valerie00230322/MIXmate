@@ -2,16 +2,16 @@ import time
 
 
 class StatusService:
-    """
-    Verarbeitet den rohen Status vom I2C-Slave (Arduino).
+    
+   # Verarbeitet den Status vom I2C-Slave (Arduino).
 
-    Statusformat (5 Bytes):
-    Byte 0: busy
-    Byte 1: band_belegt
-    Byte 2: ist_position (LSB)
-    Byte 3: ist_position (MSB)
-    Byte 4: homing_ok
-    """
+    # Statusformat (5 Bytes):
+    # Byte 0: busy
+    # Byte 1: band_belegt
+    # Byte 2: ist_position (LSB)
+    # Byte 3: ist_position (MSB)
+    # Byte 4: homing_ok
+    
 
     def parse_status(self, raw: bytes) -> dict:
         # Grundstruktur des Statusobjekts
@@ -33,7 +33,7 @@ class StatusService:
             status["error_msg"] = "Keine Antwort vom I2C-Slave."
             return status
 
-        # Falsche Paketlänge → Protokollfehler
+        # Falsche Paketlänge = Protokollfehler
         if len(raw) != 5:
             status["error_code"] = "I2C_BAD_LENGTH"
             status["error_msg"] = f"Statuspaket hat Länge {len(raw)} statt 5."
@@ -53,7 +53,7 @@ class StatusService:
 
         # Glas fehlt, aber Maschine ist nicht beschäftigt → Warnung
         if not status["band_belegt"] and not status["busy"]:
-            status["severity"] = "WARN"
+            status["severity"] = "LOW"
             status["error_msg"] = "Kein Glas auf dem Förderband."
             status["ok"] = True
             return status

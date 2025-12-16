@@ -2,6 +2,7 @@ from Controller.mix_controller import MixController
 import time
 import sys
 import select
+import os
 
 
 class ConsoleView:
@@ -86,5 +87,21 @@ class ConsoleView:
             pass
 
     def _enter_pressed(self):
-        # Prüft nicht-blockierend, ob ENTER gedrückt wurde.
-        return select.select([sys.stdin], [], [], 0)[0]
+        # Auf Windows kann man stdin nicht mit select() pollen.
+        # Dafür nehmen wir msvcrt (das ist der übliche Weg unter Windows).
+        if os.name == "nt":
+            import msvcrt
+            if msvcrt.kbhit():
+                key = msvcrt.getch()
+                return key in (b"\r", b"\n")  # Enter
+        return False
+
+        # Auf Linux/Raspberry Pi funktioniert select() auf stdin.
+        return bool(select.select([sys.stdin], [], [], 0)[0])
+    
+    
+
+
+
+
+

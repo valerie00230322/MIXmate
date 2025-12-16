@@ -81,7 +81,7 @@ class MixEngine:
             # Zutaten ohne zugewiesene Pumpe oder mit ungültiger Flussrate
             # werden übersprungen, um Fehler zu vermeiden.
             if pump_number is None or flow_rate is None or flow_rate <= 0:
-                print(f"[MixEngine] {ingredient} hat keine gültige Pumpe → übersprungen.")
+                print(f"[MixEngine] {ingredient} hat keine gültige Pumpe - übersprungen.")
                 continue
 
             print(f"[MixEngine] {ingredient}: {amount_ml:.1f} ml über Pumpe {pump_number}")
