@@ -24,11 +24,11 @@ CMD_ENTLADEN = 5
 
 
 class i2C_logic:
-    def __init__(self, simulation: bool = True):
+    def __init__(self, simulation: bool = False):
 
         # Wenn kein smbus existiert (Windows), Simulation erzwingen
         if not SMBUS_AVAILABLE:
-            simulation = True
+            simulation = False
 
         self.simulation = simulation
         
