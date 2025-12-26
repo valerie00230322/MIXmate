@@ -17,7 +17,10 @@ class ConsoleView:
             print("=== MIXMATE Console View ===")
             print("1) Cocktail mischen")
             print("2) Cocktail-Status anzeigen (live)")
-            print("3) Exit")
+            print("3) Pumpen neu kalibrieren") #TODO: implementieren
+            print("4) neuen Cocktail hinzufügen") #TODO: implementieren
+            print("5) Cocktail löschen") #TODO: implementieren
+            print("6) Exit")
 
             choice = input("Auswahl: ")
 
@@ -25,7 +28,7 @@ class ConsoleView:
                 self.mix_cocktail()
             elif choice == "2":
                 self.show_status_live()
-            elif choice == "3":
+            elif choice == "6":
                 print("Bye!")
                 break
             else:

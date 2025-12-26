@@ -1,141 +1,130 @@
 from Hardware.i2C_logic import i2C_logic
 from Services.status_service import StatusService
 from Services.status_monitor import StatusMonitor
-import time
 
 
 class MixEngine:
-    HOME_TIMEOUT = 180     # 3 Minuten
-    MOVE_TIMEOUT = 180     # 3 Minuten
-    HOME_POSITION_STEPS = 0  # ggf. anpassen, falls Home nicht 0 ist
+    HOME_TIMEOUT = 180
+    MOVE_TIMEOUT = 180
+    PUMP_TIMEOUT_EXTRA = 10
+    HOME_POSITION_STEPS = 0
 
     def __init__(self, simulation: bool = False):
+        # Debug: zeigt dir beim Start exakt, welche Datei geladen wird
+        # print("LOADED MIXENGINE FILE:", __file__)
+
         self.i2c = i2C_logic(simulation=simulation)
         self.status_service = StatusService()
         self.monitor = StatusMonitor(self.i2c, self.status_service, poll_s=0.3)
         self.monitor.start()
 
-    def get_status(self):
+    def get_status(self) -> dict:
         return self.monitor.get_latest()
 
-    # ---- Helpers: busy aus Status lesen (robust gegen verschiedene Feldnamen) ----
-    def _status_busy(self, status) -> bool:
-        """
-        Versucht 'busy' aus deinem Statusobjekt zu lesen.
-        Passe hier an, falls dein Feld anders heißt.
-        """
-        if status is None:
-            return False
+    def _busy(self, status: dict) -> bool:
+        return bool((status or {}).get("busy", False))
 
-        for name in ("busy", "is_busy", "motor_busy", "mixer_busy"):
-            if hasattr(status, name):
-                return bool(getattr(status, name))
-            if isinstance(status, dict) and name in status:
-                return bool(status[name])
+    def _homing_ok(self, status: dict) -> bool:
+        return bool((status or {}).get("homing_ok", False))
 
-        # Fallback: wenn kein busy-Feld vorhanden ist
-        return False
+    def _position(self, status: dict):
+        return (status or {}).get("ist_position", None)
 
-    def _wait_until_idle(self, timeout_s: float) -> bool:
-        return self.status_service.wait_until_idle_cached(
+    def _wait_until_idle(self, timeout_s: float, context: str):
+        ok = self.status_service.wait_until_idle_cached(
             self.monitor.get_latest,
             timeout_s=timeout_s,
             poll_s=0.2
         )
+        if not ok:
+            raise RuntimeError(f"{context}: busy blieb True oder ok=False. Status={self.get_status()}")
 
-    def _wait_for_busy_then_idle(self, timeout_s: float, busy_start_grace_s: float = 2.0):
-        """
-        Robust gegen "busy wurde verpasst":
-        - gibt kurz Zeit, dass busy=True auftaucht (grace)
-        - wenn busy nie gesehen wird -> OK (kein sofortiger Timeout)
-        - wenn busy gesehen wird -> wartet bis busy wieder False ist (bis timeout_s)
-        """
-        start = time.time()
-        saw_busy = False
+    def ensure_homed(self):
+        st = self.get_status()
 
-        grace_end = start + busy_start_grace_s
-        while time.time() < grace_end:
-            st = self.get_status()
-            if self._status_busy(st):
-                saw_busy = True
-                break
-            time.sleep(0.05)
+        # Debug falls du sehen willst, was wirklich ankommt:
+        # print("STATUS:", st)
 
-        if not saw_busy:
-            # Busy wurde evtl. zu kurz gesetzt oder vom Polling verpasst.
-            # Nicht sofort scheitern.
+        homing_ok = self._homing_ok(st)
+        pos = self._position(st)
+
+        needs_home = (not homing_ok)
+        if pos is not None and pos != self.HOME_POSITION_STEPS:
+            needs_home = True
+
+        if not needs_home:
+            print("[MixEngine] Schlitten ist bereits gehomed")
             return
 
-        if not self._wait_until_idle(timeout_s=timeout_s):
-            raise RuntimeError("❌ Timeout: busy wurde nicht wieder False (idle) innerhalb des Limits.")
+        print("[MixEngine] Schlitten ist nicht gehomed, starte Homing")
 
-    # ---- Aktionen ----
-    def home(self):
-        print("[MixEngine] Starte Homing")
+        # Vor dem Homing warten wir, bis nichts mehr busy ist.
+        # Achtung: Dein StatusService markiert NOT_HOMED als ok=False.
+        # Deshalb kann wait_until_idle_cached hier sofort False liefern.
+        # Wir lösen das, indem wir beim Homing direkt über raw status gehen.
+        self._wait_until_idle_allow_not_homed(self.HOME_TIMEOUT, "Homing vor Start")
+
         self.monitor.run_i2c(self.i2c.home)
 
-        # Homing kann länger dauern -> 3 Minuten, grace etwas größer
-        self._wait_for_busy_then_idle(timeout_s=self.HOME_TIMEOUT, busy_start_grace_s=3.0)
+        self._wait_until_idle_allow_not_homed(self.HOME_TIMEOUT, "Homing nach Start")
 
-        # Falls busy nie gesehen wurde, kann Homing trotzdem noch laufen.
-        # Optional: zur Sicherheit immer noch auf idle warten (ohne busy-Start-Anforderung):
-        if not self._wait_until_idle(timeout_s=self.HOME_TIMEOUT):
-            raise RuntimeError("❌ Homing fehlgeschlagen (Timeout 3 Minuten).")
+        st_after = self.get_status()
+        if not self._homing_ok(st_after):
+            raise RuntimeError(f"Homing wurde ausgeführt, aber homing_ok ist weiterhin 0. Status={st_after}")
 
         print("[MixEngine] Homing abgeschlossen")
 
+    def _wait_until_idle_allow_not_homed(self, timeout_s: float, context: str):
+        """
+        Dein StatusService setzt ok=False solange homing_ok=False.
+        Beim Homing ist das aber normal.
+        Deshalb warten wir hier "nur" darauf, dass busy=False wird.
+        """
+        import time
+        start = time.time()
+
+        while time.time() - start < timeout_s:
+            st = self.get_status()
+
+            # Wenn busy False ist, ist der Schritt abgeschlossen
+            if not self._busy(st):
+                return
+
+            time.sleep(0.2)
+
+        raise RuntimeError(f"{context}: busy blieb True (Timeout). Status={self.get_status()}")
+
     def move_to_position(self, target_position: int):
         if target_position is None:
-            raise ValueError("Zielposition darf nicht None sein.")
+            raise ValueError("Zielposition darf nicht None sein")
 
-        current_position = self.i2c.get_current_position()
-        print(f"[MixEngine] Bewege von {current_position} nach {target_position}")
+        self._wait_until_idle(self.MOVE_TIMEOUT, "Bewegung vor Start")
+
+        st = self.get_status()
+        print(f"[MixEngine] Fahre Schlitten von {self._position(st)} nach {target_position}")
 
         self.monitor.run_i2c(self.i2c.move_to_position, target_position)
 
-        # Bewegung: nicht sofort failen wenn busy verpasst wird
-        self._wait_for_busy_then_idle(timeout_s=self.MOVE_TIMEOUT, busy_start_grace_s=2.0)
-
-        # Und trotzdem am Ende sicherstellen, dass es wirklich idle ist
-        if not self._wait_until_idle(timeout_s=self.MOVE_TIMEOUT):
-            raise RuntimeError(
-                f"❌ Schlitten hat Position {target_position} "
-                f"nicht innerhalb von 3 Minuten erreicht."
-            )
-
+        self._wait_until_idle(self.MOVE_TIMEOUT, "Bewegung nach Start")
         print("[MixEngine] Position erreicht")
 
     def _dispense(self, pump_number: int, seconds: int):
-        print(f"[MixEngine] Starte Pumpe {pump_number} für {seconds}s")
+        timeout = seconds + self.PUMP_TIMEOUT_EXTRA
 
+        self._wait_until_idle(timeout, "Pumpen vor Start")
+
+        print(f"[MixEngine] Starte Pumpe {pump_number} für {seconds} Sekunden")
         self.monitor.run_i2c(self.i2c.activate_pump, pump_number, seconds)
 
-        # Pumpen sollte busy relativ sicher setzen, grace kleiner
-        self._wait_for_busy_then_idle(timeout_s=seconds + 10, busy_start_grace_s=1.0)
-
-        # Absichern: wirklich idle nach Pumpen
-        if not self._wait_until_idle(timeout_s=seconds + 10):
-            raise RuntimeError(f"❌ Pumpe {pump_number} hat nicht rechtzeitig beendet.")
-
-        print(f"[MixEngine] Pumpe {pump_number} fertig")
+        self._wait_until_idle(timeout, "Pumpen nach Start")
+        print(f"[MixEngine] Pumpe {pump_number} beendet")
 
     def mix_cocktail(self, mix_data: list, factor: float = 1.0):
         if not mix_data:
-            raise ValueError("Mix-Daten dürfen nicht leer sein.")
+            raise ValueError("Mix-Daten sind leer")
 
-        # 1) Nur homen, wenn nicht auf Ausgangsposition
-        try:
-            current_position = self.i2c.get_current_position()
-        except Exception:
-            current_position = None
+        self.ensure_homed()
 
-        if current_position is None or current_position != self.HOME_POSITION_STEPS:
-            print(f"[MixEngine] Nicht auf Home-Position ({current_position}) -> Homing nötig")
-            self.home()
-        else:
-            print("[MixEngine] Bereits auf Home-Position -> kein Homing nötig")
-
-        # 2) Zutaten strikt nacheinander
         for item in mix_data:
             ingredient = item["ingredient_name"]
             amount_ml = item["amount_ml"] * factor
@@ -144,20 +133,17 @@ class MixEngine:
             position_steps = item["position_steps"]
 
             if pump_number is None or flow_rate is None or flow_rate <= 0:
-                print(f"[MixEngine] {ingredient} hat keine gültige Pumpe – übersprungen.")
+                print(f"[MixEngine] {ingredient}: ungültige Pumpendaten, übersprungen")
                 continue
 
-            print(f"[MixEngine] {ingredient}: {amount_ml:.1f} ml")
+            print(f"[MixEngine] Verarbeite {ingredient}: {amount_ml:.1f} ml")
 
-            # a) zur Pumpenposition fahren + warten bis idle
             self.move_to_position(position_steps)
 
-            # b) Pumpdauer berechnen (Arduino akzeptiert 1..255s)
             dispense_time_s = amount_ml / flow_rate
             seconds = max(1, min(255, int(round(dispense_time_s))))
 
-            # c) pumpen + warten bis idle
             self._dispense(pump_number, seconds)
 
-        print("[MixEngine] Cocktail fertig 🍹")
+        print("[MixEngine] Cocktail vollständig gemixt")
         return mix_data
