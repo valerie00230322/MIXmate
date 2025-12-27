@@ -108,7 +108,7 @@ class ConsoleView:
 
         print("\nPumpen in der Datenbank:")
         for p in pumps:
-            # erwartete Keys passend zu deiner Tabelle
+            # erwartete Keys passend zu DB Tabelle
             print(
                 f"- Pumpe {p['pump_number']}: "
                 f"ingredient_id={p['ingredient_id']}, "
