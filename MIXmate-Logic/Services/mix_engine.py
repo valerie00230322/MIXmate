@@ -42,7 +42,7 @@ class MixEngine:
     def ensure_homed(self):
         st = self.get_status()
 
-        # Debug falls du sehen willst, was wirklich ankommt:
+        # Debug
         # print("STATUS:", st)
 
         homing_ok = self._homing_ok(st)
@@ -58,10 +58,8 @@ class MixEngine:
 
         print("[MixEngine] Schlitten ist nicht gehomed, starte Homing")
 
-        # Vor dem Homing warten wir, bis nichts mehr busy ist.
-        # Achtung: Dein StatusService markiert NOT_HOMED als ok=False.
-        # Deshalb kann wait_until_idle_cached hier sofort False liefern.
-        # Wir lösen das, indem wir beim Homing direkt über raw status gehen.
+        # Vor dem Homing warten , bis nichts mehr busy ist.
+        
         self._wait_until_idle_allow_not_homed(self.HOME_TIMEOUT, "Homing vor Start")
 
         self.monitor.run_i2c(self.i2c.home)
