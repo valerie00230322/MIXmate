@@ -1,5 +1,6 @@
 from Controller.mix_controller import MixController
 from Controller.pump_controller import PumpController
+from Controller.admin_controller import AdminController
 import time
 import sys
 import select
@@ -7,9 +8,10 @@ import os
 
 
 class ConsoleView:
-    def __init__(self, mix_controller: MixController, pump_controller: PumpController):
+    def __init__(self, mix_controller: MixController, pump_controller: PumpController, admin_controller: AdminController):
         self.mix_controller = mix_controller
         self.pump_controller = pump_controller
+        self.admin_controller = admin_controller
 
     def run(self):
         while True:
@@ -17,9 +19,8 @@ class ConsoleView:
             print("1) Cocktail mischen")
             print("2) Cocktail-Status anzeigen (live)")
             print("3) Kalibrierungsmenü")
-            print("4) neuen Cocktail hinzufügen")  # TODO
-            print("5) Cocktail löschen")           # TODO
-            print("6) Exit")
+            print("4) Adminmenü")  # TODO: Admin: Cocktail und Zutaten hinzufügen,updaten, löschen
+            print("5) Exit")
 
             choice = input("Auswahl: ").strip()
 
@@ -29,7 +30,7 @@ class ConsoleView:
                 self.show_status_live()
             elif choice == "3":
                 self.calibrate_pumps()
-            elif choice == "6":
+            elif choice == "5":
                 print("Bye!")
                 break
             else:
