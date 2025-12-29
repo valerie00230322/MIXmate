@@ -25,7 +25,6 @@ class MixModel:
 
 
     def get_full_mix_data(self, cocktail_id):
-
         query = """
         SELECT
             c.cocktail_name,
@@ -43,15 +42,22 @@ class MixModel:
         JOIN cocktails c
             ON c.cocktail_id = ci.cocktail_id
         WHERE ci.cocktail_id = ?
-        ORDER BY ci.order_index ASC;
+        ORDER BY
+            CASE WHEN ci.order_index IS NULL THEN 999999 ELSE ci.order_index END ASC,
+            ci.ingredient_id ASC;
         """
 
         self.cursor.execute(query, (cocktail_id,))
         rows = self.cursor.fetchall()
 
-        # Falls nichts gefunden : None zurückgeben
         if not rows:
             return None
 
-        # Jede Zeile wird zu dict
-        return [dict(row) for row in rows]
+        data = [dict(r) for r in rows]
+
+        # optional: check auf doppelte order_index / fehlende order_index
+        for d in data:
+            if d.get("order_index") is None:
+                raise ValueError("order_index ist NULL. Bitte in der DB setzen.")
+
+        return data
