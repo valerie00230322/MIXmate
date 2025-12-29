@@ -1,6 +1,9 @@
+# Services/mix_engine.py (oder wo deine MixEngine liegt)
+
 from Hardware.i2C_logic import i2C_logic
 from Services.status_service import StatusService
 from Services.status_monitor import StatusMonitor
+import time
 
 
 class MixEngine:
@@ -9,10 +12,11 @@ class MixEngine:
     PUMP_TIMEOUT_EXTRA = 10
     HOME_POSITION_STEPS = 0
 
-    def __init__(self, simulation: bool = False):
-        # Debug: zeigt dir beim Start exakt, welche Datei geladen wird
-        # print("LOADED MIXENGINE FILE:", __file__)
+    # Wie lange wir nach Homing noch auf "homing_ok=True" warten,
+    # damit der StatusMonitor garantiert aktualisiert hat:
+    POST_HOME_STATUS_SYNC_TIMEOUT = 5.0
 
+    def __init__(self, simulation: bool = False):
         self.i2c = i2C_logic(simulation=simulation)
         self.status_service = StatusService()
         self.monitor = StatusMonitor(self.i2c, self.status_service, poll_s=0.3)
@@ -30,20 +34,68 @@ class MixEngine:
     def _position(self, status: dict):
         return (status or {}).get("ist_position", None)
 
+    # -------------------------
+    # FIX #1: Robust auf idle warten (busy=False), NICHT auf ok=True
+    # -------------------------
     def _wait_until_idle(self, timeout_s: float, context: str):
-        ok = self.status_service.wait_until_idle_cached(
-            self.monitor.get_latest,
-            timeout_s=timeout_s,
-            poll_s=0.2
-        )
-        if not ok:
-            raise RuntimeError(f"{context}: busy blieb True oder ok=False. Status={self.get_status()}")
+        """
+        Robust: wartet primär auf busy=False.
+        Hintergrund: dein StatusService setzt ok=False solange homing_ok=False
+        und nach Homing kann der Monitor kurz stale sein -> ok bleibt kurz False.
+        """
+        start = time.time()
+        last = None
+
+        while time.time() - start < timeout_s:
+            st = self.get_status()
+            last = st
+
+            if not self._busy(st):
+                return
+
+            time.sleep(0.2)
+
+        raise RuntimeError(f"{context}: Timeout. busy blieb True. Status={last}")
+
+    def _wait_until_idle_allow_not_homed(self, timeout_s: float, context: str):
+        """
+        Beim Homing ist homing_ok möglicherweise noch False -> ok wäre dann False.
+        Deshalb ebenfalls nur busy abwarten.
+        """
+        start = time.time()
+        last = None
+
+        while time.time() - start < timeout_s:
+            st = self.get_status()
+            last = st
+
+            if not self._busy(st):
+                return
+
+            time.sleep(0.2)
+
+        raise RuntimeError(f"{context}: Timeout. busy blieb True. Status={last}")
+
+    # -------------------------
+    # FIX #2: Nach Homing aktiv auf homing_ok=True warten (Status-Sync)
+    # -------------------------
+    def _wait_for_homing_ok(self, timeout_s: float, context: str):
+        start = time.time()
+        last = None
+
+        while time.time() - start < timeout_s:
+            st = self.get_status()
+            last = st
+
+            if (not self._busy(st)) and self._homing_ok(st):
+                return
+
+            time.sleep(0.2)
+
+        raise RuntimeError(f"{context}: homing_ok wurde nicht True. Status={last}")
 
     def ensure_homed(self):
         st = self.get_status()
-
-        # Debug
-        # print("STATUS:", st)
 
         homing_ok = self._homing_ok(st)
         pos = self._position(st)
@@ -58,44 +110,25 @@ class MixEngine:
 
         print("[MixEngine] Schlitten ist nicht gehomed, starte Homing")
 
-        # Vor dem Homing warten , bis nichts mehr busy ist.
-        
+        # Vor Homing warten, bis nicht busy
         self._wait_until_idle_allow_not_homed(self.HOME_TIMEOUT, "Homing vor Start")
 
+        # Homing ausführen
         self.monitor.run_i2c(self.i2c.home)
 
+        # Warten bis Homing-Prozess fertig (busy=False)
         self._wait_until_idle_allow_not_homed(self.HOME_TIMEOUT, "Homing nach Start")
 
-        st_after = self.get_status()
-        if not self._homing_ok(st_after):
-            raise RuntimeError(f"Homing wurde ausgeführt, aber homing_ok ist weiterhin 0. Status={st_after}")
+        # WICHTIG: Jetzt noch warten, bis der Monitor homing_ok wirklich auf True hat
+        self._wait_for_homing_ok(self.POST_HOME_STATUS_SYNC_TIMEOUT, "Status-Sync nach Homing")
 
         print("[MixEngine] Homing abgeschlossen")
-
-    def _wait_until_idle_allow_not_homed(self, timeout_s: float, context: str):
-        """
-        Dein StatusService setzt ok=False solange homing_ok=False.
-        Beim Homing ist das aber normal.
-        Deshalb warten wir hier "nur" darauf, dass busy=False wird.
-        """
-        import time
-        start = time.time()
-
-        while time.time() - start < timeout_s:
-            st = self.get_status()
-
-            # Wenn busy False ist, ist der Schritt abgeschlossen
-            if not self._busy(st):
-                return
-
-            time.sleep(0.2)
-
-        raise RuntimeError(f"{context}: busy blieb True (Timeout). Status={self.get_status()}")
 
     def move_to_position(self, target_position: int):
         if target_position is None:
             raise ValueError("Zielposition darf nicht None sein")
 
+        # robust warten (busy=False)
         self._wait_until_idle(self.MOVE_TIMEOUT, "Bewegung vor Start")
 
         st = self.get_status()
@@ -121,6 +154,8 @@ class MixEngine:
         if not mix_data:
             raise ValueError("Mix-Daten sind leer")
 
+        # <- hier passiert dein Problem: wenn nicht gehomed, homing + stale status
+        #    wird jetzt sauber abgefangen
         self.ensure_homed()
 
         for item in mix_data:

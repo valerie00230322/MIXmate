@@ -18,8 +18,18 @@ class ConsoleView:
         self.calibration_view = CalibrationView(self.pump_controller)
         self.admin_view = AdminView(self.admin_controller, self.pump_controller)
 
+    def _clear(self):
+        print("\033c", end="")
+
+    def _pause(self, msg="\nENTER drücken um zum Menü zurückzukehren..."):
+        try:
+            input(msg)
+        except EOFError:
+            time.sleep(0.3)
+
     def run(self):
         while True:
+            self._clear()
             print("=== MIXMATE ===")
             print("1) Cocktail mischen")
             print("2) Cocktail-Status anzeigen (live)")
@@ -33,40 +43,42 @@ class ConsoleView:
                 self._mix_menu()
             elif choice == "2":
                 self.show_status_live()
+                self._pause()
             elif choice == "3":
                 self.calibration_view.run()
+                self._pause()
             elif choice == "4":
                 self.admin_view.run()
+                self._pause()
             elif choice == "6":
-                print("Bye!")
+                print("Bye.")
                 break
             else:
                 print("Ungültige Eingabe")
+                self._pause()
 
     def _mix_menu(self):
-        # Menüpunkt 1 ist absichtlich kurz gehalten.
-        # Wenn später mal mehr Auswahl kommt (Liste, Suche, Favoriten),
-        # passiert das im CocktailView und nicht hier.
         try:
+            self._clear()
             self.cocktail_view.run_mix_flow()
+            self._pause("\nFertig. ENTER drücken um zum Menü zurückzukehren...")
         except Exception as e:
             print("Fehler:", e)
+            self._pause()
 
     def show_status_live(self):
-        print("\nLive-Status (ENTER drücken zum Beenden)\n")
-
         try:
             while True:
                 status = self.mix_controller.get_status()
 
-                print("\033c", end="")
+                self._clear()
                 print("=== MIXMATE STATUS ===")
-                print("OK:           ", status.get("ok"))
-                print("Severity:     ", status.get("severity"))
-                print("Busy:         ", status.get("busy"))
-                print("Band belegt:  ", status.get("band_belegt"))
-                print("Position:     ", status.get("ist_position"))
-                print("Homing OK:    ", status.get("homing_ok"))
+                print("OK:          ", status.get("ok"))
+                print("Severity:    ", status.get("severity"))
+                print("Busy:        ", status.get("busy"))
+                print("Band belegt: ", status.get("band_belegt"))
+                print("Position:    ", status.get("ist_position"))
+                print("Homing OK:   ", status.get("homing_ok"))
 
                 if status.get("error_msg"):
                     print("\nHinweis:", status.get("error_msg"))
@@ -87,6 +99,9 @@ class ConsoleView:
             if msvcrt.kbhit():
                 key = msvcrt.getch()
                 return key in (b"\r", b"\n")
-        return False
+            return False
 
-        return bool(select.select([sys.stdin], [], [], 0)[0])
+        try:
+            return bool(select.select([sys.stdin], [], [], 0)[0])
+        except Exception:
+            return False
