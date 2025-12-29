@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 # ============================================================
-# MixMate I2C Konsole
+# MixMate I2C Konsole (angepasst auf dein "I2C Programm")
+# - smbus2
+# - STOP-sichere Transaktionen (WRITE-only, READ-only separat)
+# - FAHR: int16 little-endian (CMD, low, high)
+# - STATUS: 5 Bytes: [busy, band, pos_low, pos_high, homed]
 # ============================================================
 
 import sys
@@ -8,83 +12,119 @@ import time
 import shlex
 
 try:
-    import i2C_theLast as i2c
-except ImportError as e:
-    print("FEHLER: i2C_theLast.py konnte nicht importiert werden.")
-    print("Lege mixmate_console.py in den gleichen Ordner.")
-    print(e)
+    from smbus2 import SMBus, i2c_msg
+except ImportError:
+    print("Fehler: smbus2 ist nicht installiert. Bitte mit 'pip install smbus2' nachinstallieren.")
     sys.exit(1)
 
+I2C_BUS = 1
+I2C_ADDR = 0x13
 
-# ------------------------------------------------------------
-# Hilfsfunktionen
-# ------------------------------------------------------------
-
-def _clip_int8(val: int) -> int:
-    if val < -128:
-        return -128
-    if val > 127:
-        return 127
-    return val
+CMD_FAHR     = 0
+CMD_HOME     = 1
+CMD_STATUS   = 2
+CMD_PUMPE    = 3
+CMD_BELADEN  = 4
+CMD_ENTLADEN = 5
 
 
 # ------------------------------------------------------------
-# I2C Befehle
+# I2C Low-Level (wie in deinem I2C Programm)
+# ------------------------------------------------------------
+
+class MixMateI2C:
+    def __init__(self, bus_no: int = I2C_BUS, addr: int = I2C_ADDR):
+        self.bus_no = bus_no
+        self.addr = addr
+        self.bus = None
+
+    def open(self):
+        if self.bus is None:
+            self.bus = SMBus(self.bus_no)
+
+    def close(self):
+        if self.bus is not None:
+            try:
+                self.bus.close()
+            finally:
+                self.bus = None
+
+    def write_only(self, payload: bytes) -> None:
+        """Nur WRITE (mit STOP am Ende)."""
+        self.open()
+        self.bus.i2c_rdwr(i2c_msg.write(self.addr, payload))
+
+    def read_only(self, length: int) -> bytes:
+        """Nur READ als separate Transaktion."""
+        self.open()
+        msg = i2c_msg.read(self.addr, length)
+        self.bus.i2c_rdwr(msg)
+        return bytes(msg)
+
+
+i2c = MixMateI2C()
+
+
+# ------------------------------------------------------------
+# I2C Befehle (angepasst)
 # ------------------------------------------------------------
 
 def send_home():
-    payload = bytes([i2c.CMD_HOME])
-    ack = i2c.i2c_write(payload, read_len=1)
-    print(f"HOME -> ACK={list(ack)}")
+    i2c.write_only(bytes([CMD_HOME]))
+    print("HOME gesendet")
 
 
 def send_status():
-    payload = bytes([i2c.CMD_STATUS])
-    data = i2c.i2c_write(payload, read_len=5)
+    # 1) Status-Kommando senden (STOP)
+    i2c.write_only(bytes([CMD_STATUS]))
+
+    # 2) Dann 5 Bytes lesen (separat)
+    data = i2c.read_only(5)
 
     if len(data) != 5:
         print("STATUS: Ungültige Antwort:", list(data))
         return
 
-    busy = data[0]
-    pos = data[1] | (data[2] << 8) | (data[3] << 16) | (data[4] << 24)
-    if pos & (1 << 31):
-        pos -= (1 << 32)
+    busy = bool(data[0])
+    band = bool(data[1])
+    pos = int.from_bytes(data[2:4], "little", signed=True)
+    homed = bool(data[4])
 
-    print(f"STATUS -> busy={busy}, position={pos}")
+    print(f"STATUS -> busy={busy}, band={band}, position={pos}, homed={homed}")
 
 
 def send_fahr(dist: int):
     dist = int(dist)
 
-    if dist < -128 or dist > 127:
-        print("FEHLER: dist muss -128 .. 127 sein")
-        return
+    # int16, wie in deinem I2C Programm
+    if not -32768 <= dist <= 32767:
+        print("WARNUNG: dist muss in int16 passen (-32768..32767). Wert wird geclippt.")
+        dist = max(-32768, min(32767, dist))
 
-    payload = bytes([i2c.CMD_FAHR, dist & 0xFF])
-    ack = i2c.i2c_write(payload, read_len=1)
+    low = dist & 0xFF
+    high = (dist >> 8) & 0xFF
 
-    print(f"FAHR {dist} -> ACK={list(ack)}")
+    payload = bytes([CMD_FAHR, low, high])
+    i2c.write_only(payload)
+    print(f"FAHR gesendet: dist={dist} (int16 LE)")
 
 
 def send_beladen():
-    payload = bytes([i2c.CMD_BELADEN])
-    ack = i2c.i2c_write(payload, read_len=1)
-    print(f"BELADEN -> ACK={list(ack)}")
+    i2c.write_only(bytes([CMD_BELADEN]))
+    print("BELADEN gesendet")
 
 
 def send_entladen():
-    payload = bytes([i2c.CMD_ENTLADEN])
-    ack = i2c.i2c_write(payload, read_len=1)
-    print(f"ENTLADEN -> ACK={list(ack)}")
+    i2c.write_only(bytes([CMD_ENTLADEN]))
+    print("ENTLADEN gesendet")
 
 
 def send_pumpe(pump_id: int, time_s: int):
     pump_id = int(pump_id)
     time_s = int(time_s)
 
-    if pump_id < 1 or pump_id > 6:
-        print("FEHLER: pump_id muss 1..6 sein")
+    if not (1 <= pump_id <= 10):
+        print("FEHLER: pump_id muss 1..10 sein")
         return
 
     if time_s < 0:
@@ -93,14 +133,9 @@ def send_pumpe(pump_id: int, time_s: int):
         print("WARNUNG: Zeit >255s, auf 255 begrenzt")
         time_s = 255
 
-    payload = bytes([
-        i2c.CMD_PUMPE,
-        pump_id & 0xFF,
-        time_s & 0xFF
-    ])
-
-    ack = i2c.i2c_write(payload, read_len=1)
-    print(f"PUMPE {pump_id} {time_s}s -> ACK={list(ack)}")
+    payload = bytes([CMD_PUMPE, pump_id & 0xFF, time_s & 0xFF])
+    i2c.write_only(payload)
+    print(f"PUMPE gesendet (id={pump_id}, zeit={time_s}s)")
 
 
 # ------------------------------------------------------------
@@ -113,13 +148,13 @@ Befehle:
   home
   status
 
-  fahr <dist>              (dist: -128 .. 127)
+  fahr <dist>              (dist: int16 -32768 .. 32767)
 
   beladen <dist>           -> fahr <dist> + BELADEN
   entladen <dist>          -> fahr <dist> + ENTLADEN
 
   pumpe <zeit_s>           -> Pumpe 1
-  pumpe <id> <zeit_s>      -> Pumpe id (1..6)
+  pumpe <id> <zeit_s>      -> Pumpe id (1..10)
 
   help
   exit | quit
@@ -203,6 +238,7 @@ def main():
         except Exception as e:
             print("Fehler:", e)
 
+    i2c.close()
     print("Konsole beendet.")
 
 
