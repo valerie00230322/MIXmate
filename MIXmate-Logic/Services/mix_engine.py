@@ -1,3 +1,5 @@
+# Services/mix_engine.py
+
 from Hardware.i2C_logic import i2C_logic
 from Services.status_service import StatusService
 from Services.status_monitor import StatusMonitor
@@ -5,15 +7,20 @@ import time
 
 
 class MixEngine:
-    HOME_TIMEOUT = 180
-    MOVE_TIMEOUT = 180
-    PUMP_TIMEOUT_EXTRA = 10
+    # hohe Timeouts (wie gewünscht)
+    HOME_TIMEOUT = 1800
+    MOVE_TIMEOUT = 1800
+    PUMP_TIMEOUT_EXTRA = 1000
     HOME_POSITION_MM = 0
 
-    BUSY_START_TIMEOUT = 3.0
-    POST_HOME_STATUS_SYNC_TIMEOUT = 5.0
+    # Start-Handshake: kann hoch sein, wird aber robuster gemacht
+    BUSY_START_TIMEOUT = 1800
 
-    POSITION_TOL_MM = 0  # falls du willst: 1..3
+    # nach Homing warten wir zusätzlich, bis homing_ok wirklich 1 ist
+    POST_HOME_STATUS_SYNC_TIMEOUT = 180
+
+    # Toleranz in mm für Positionserreichung
+    POSITION_TOL_MM = 0
 
     def __init__(self, simulation: bool = False):
         self.i2c = i2C_logic(simulation=simulation)
@@ -40,31 +47,25 @@ class MixEngine:
     def _wait_until_idle(self, timeout_s: float, context: str):
         start = time.time()
         last = None
+
         while time.time() - start < timeout_s:
             last = self._refresh_status()
             if not self._busy(last):
                 return
             time.sleep(0.2)
-        raise RuntimeError(f"{context}: Timeout. busy blieb True. Status={last}")
 
-    def _wait_until_busy(self, timeout_s: float, context: str):
-        start = time.time()
-        last = None
-        while time.time() - start < timeout_s:
-            last = self._refresh_status()
-            if self._busy(last):
-                return
-            time.sleep(0.05)
-        raise RuntimeError(f"{context}: Timeout. busy wurde nicht True. Status={last}")
+        raise RuntimeError(f"{context}: Timeout. busy blieb True. Status={last}")
 
     def _wait_for_homing_ok(self, timeout_s: float, context: str):
         start = time.time()
         last = None
+
         while time.time() - start < timeout_s:
             last = self._refresh_status()
             if (not self._busy(last)) and self._homing_ok(last):
                 return
             time.sleep(0.2)
+
         raise RuntimeError(f"{context}: homing_ok wurde nicht True. Status={last}")
 
     def _wait_until_position_reached(self, target_mm: int, timeout_s: float, context: str, tol_mm: int = 0):
@@ -90,6 +91,48 @@ class MixEngine:
 
         raise RuntimeError(f"{context}: Zielposition nicht erreicht. target_mm={target_mm}, Status={last}")
 
+    def _wait_move_started(self, old_pos_mm: int, timeout_s: float, context: str):
+        """
+        Start erkannt, wenn:
+        - busy == 1, oder
+        - Position sich vom alten Wert unterscheidet
+        """
+        start = time.time()
+        last = None
+
+        while time.time() - start < timeout_s:
+            last = self._refresh_status()
+            if self._busy(last):
+                return
+
+            pos = self._position_mm(last)
+            if pos is not None and old_pos_mm is not None:
+                try:
+                    if int(pos) != int(old_pos_mm):
+                        return
+                except Exception:
+                    pass
+
+            time.sleep(0.05)
+
+        raise RuntimeError(f"{context}: Bewegung hat nicht gestartet. Status={last}")
+
+    def _wait_pump_started(self, timeout_s: float, context: str):
+        """
+        Pump-Start: hier haben wir kein separates Statusbit.
+        Wir akzeptieren busy==1 als Startsignal.
+        """
+        start = time.time()
+        last = None
+
+        while time.time() - start < timeout_s:
+            last = self._refresh_status()
+            if self._busy(last):
+                return
+            time.sleep(0.05)
+
+        raise RuntimeError(f"{context}: Pumpe hat nicht gestartet. Status={last}")
+
     def ensure_homed(self):
         st = self._refresh_status()
 
@@ -108,9 +151,12 @@ class MixEngine:
 
         self._wait_until_idle(self.HOME_TIMEOUT, "Homing vor Start")
 
+        old_pos = self._position_mm(self._refresh_status())
         self.monitor.run_i2c(self.i2c.home)
 
-        self._wait_until_busy(self.BUSY_START_TIMEOUT, "Homing Start")
+        # Homing-Start: busy oder Positionsänderung (falls Position beim Homing kurz anders wird)
+        self._wait_move_started(old_pos, self.BUSY_START_TIMEOUT, "Homing Start")
+
         self._wait_until_idle(self.HOME_TIMEOUT, "Homing nach Start")
         self._wait_for_homing_ok(self.POST_HOME_STATUS_SYNC_TIMEOUT, "Status-Sync nach Homing")
 
@@ -125,12 +171,16 @@ class MixEngine:
         self._wait_until_idle(self.MOVE_TIMEOUT, "Bewegung vor Start")
 
         st = self._refresh_status()
-        print(f"[MixEngine] Fahre Schlitten von {self._position_mm(st)} nach {target_mm}")
+        old_pos = self._position_mm(st)
+
+        print(f"[MixEngine] Fahre Schlitten von {old_pos} nach {target_mm}")
 
         self.monitor.run_i2c(self.i2c.move_to_position, target_mm)
 
-        self._wait_until_busy(self.BUSY_START_TIMEOUT, "Bewegung Start")
+        # Start-Handshake robuster: busy oder Positionsänderung
+        self._wait_move_started(old_pos, self.BUSY_START_TIMEOUT, "Bewegung Start")
 
+        # Ende: Position muss erreicht sein und busy=0
         self._wait_until_position_reached(
             target_mm=target_mm,
             timeout_s=self.MOVE_TIMEOUT,
@@ -149,7 +199,7 @@ class MixEngine:
         print(f"[MixEngine] Starte Pumpe {pump_number} für {seconds} Sekunden")
         self.monitor.run_i2c(self.i2c.activate_pump, int(pump_number), seconds)
 
-        self._wait_until_busy(self.BUSY_START_TIMEOUT, "Pumpen Start")
+        self._wait_pump_started(self.BUSY_START_TIMEOUT, "Pumpen Start")
         self._wait_until_idle(timeout, "Pumpen nach Start")
 
         print(f"[MixEngine] Pumpe {pump_number} beendet")
@@ -168,7 +218,9 @@ class MixEngine:
             amount_ml = float(item["amount_ml"]) * float(factor)
             pump_number = item["pump_number"]
             flow_rate = item["flow_rate_ml_s"]
-            position_mm = item["position_steps"]  # bleibt so, ist bei euch mm
+
+            # Feld heißt so, ist bei euch aber mm (Arduino rechnet mm -> steps)
+            position_mm = item["position_steps"]
 
             if pump_number is None or flow_rate is None or float(flow_rate) <= 0:
                 print(f"[MixEngine] {ingredient}: ungültige Pumpendaten, übersprungen")
