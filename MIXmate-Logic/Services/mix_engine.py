@@ -7,16 +7,16 @@ import time
 
 
 class MixEngine:
-    HOME_TIMEOUT = 180
-    MOVE_TIMEOUT = 180
-    PUMP_TIMEOUT_EXTRA = 10
+    HOME_TIMEOUT = 1800
+    MOVE_TIMEOUT = 1800
+    PUMP_TIMEOUT_EXTRA = 1000
     HOME_POSITION_UNITS = 0
 
     # nach einem Befehl warten wir kurz, bis busy im Status wirklich auf 1 springt
-    BUSY_START_TIMEOUT = 2.0
+    BUSY_START_TIMEOUT = 1800
 
     # nach Homing warten wir zusätzlich, bis homing_ok wirklich 1 ist
-    POST_HOME_STATUS_SYNC_TIMEOUT = 5.0
+    POST_HOME_STATUS_SYNC_TIMEOUT = 180
 
     def __init__(self, simulation: bool = False):
         self.i2c = i2C_logic(simulation=simulation)
