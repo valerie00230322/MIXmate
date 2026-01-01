@@ -29,7 +29,7 @@ class AdminView:
             print("\n--- Zutaten ---")
             print("1) Anzeigen")
             print("2) Hinzufügen")
-            print("3) Löschen")
+            print("3) Umbenennen")
             print("4) Zurück")
 
             c = input("Auswahl: ").strip()
@@ -38,18 +38,30 @@ class AdminView:
                 items = self.admin_controller.list_ingredients()
                 for ing in items:
                     print(f"{ing['ingredient_id']}: {ing['name']}")
+
             elif c == "2":
                 name = input("Zutatenname: ").strip()
-                self.admin_controller.add_ingredient(name)
-                print("Gespeichert.")
+                try:
+                    self.admin_controller.add_ingredient(name)
+                    print("Gespeichert.")
+                except Exception as e:
+                    print("Fehler:", e)
+
             elif c == "3":
-                ingredient_id = int(input("ingredient_id löschen: ").strip())
-                self.admin_controller.delete_ingredient(ingredient_id)
-                print("Gelöscht.")
+                try:
+                    ingredient_id = int(input("ingredient_id umbenennen: ").strip())
+                    new_name = input("Neuer Name: ").strip()
+                    self.admin_controller.rename_ingredient(ingredient_id, new_name)
+                    print("Umbenannt.")
+                except Exception as e:
+                    print("Fehler:", e)
+
             elif c == "4":
                 return
+
             else:
                 print("Ungültige Eingabe")
+
 
     def cocktails_menu(self):
         while True:

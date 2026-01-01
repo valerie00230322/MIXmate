@@ -9,14 +9,14 @@ import os
 
 
 class ConsoleView:
-    def __init__(self, mix_controller, pump_controller): #, admin_controller
+    def __init__(self, mix_controller, pump_controller, admin_controller): 
         self.mix_controller = mix_controller
         self.pump_controller = pump_controller
-        #self.admin_controller = admin_controller
+        self.admin_controller = admin_controller
 
         self.cocktail_view = CocktailView(self.mix_controller)
         self.calibration_view = CalibrationView(self.pump_controller)
-        #self.admin_view = AdminView(self.admin_controller, self.pump_controller)
+        self.admin_view = AdminView(self.admin_controller, self.pump_controller)
 
     def _clear(self):
         print("\033c", end="")
