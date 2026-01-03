@@ -22,7 +22,7 @@ class MixEngine:
     # Toleranz in mm für Positionserreichung
     POSITION_TOL_MM = 0
 
-    def __init__(self, simulation: bool = False):
+    def __init__(self, simulation: bool = True):
         self.i2c = i2C_logic(simulation=simulation)
         self.status_service = StatusService()
         self.monitor = StatusMonitor(self.i2c, self.status_service, poll_s=0.3)
