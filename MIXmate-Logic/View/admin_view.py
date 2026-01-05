@@ -69,7 +69,7 @@ class AdminView:
                 print("Ungültige Eingabe")
 
     def cocktails_menu(self):
-        # Hier verwaltest du Cocktails (Name/ID) und kannst danach das Rezept bearbeiten.
+        # Verwaltung vom Cocktails (Name/ID) + Bearbeitung des Rezept
         while True:
             print("\n--- Cocktails ---")
             print("1) Anzeigen")

@@ -11,7 +11,7 @@ class MixEngine:
     HOME_TIMEOUT = 1800
     MOVE_TIMEOUT = 1800
     PUMP_TIMEOUT_EXTRA = 1000
-    HOME_POSITION_MM = 0
+    HOME_POSITION_MM = 0 #Homing = Schlitten weiß wo er ist
 
     # Start-Handshake: kann hoch sein, wird aber robuster gemacht
     BUSY_START_TIMEOUT = 1800
@@ -33,7 +33,7 @@ class MixEngine:
 
     def _busy(self, status: dict) -> bool:
         return bool((status or {}).get("busy", False))
-
+    #TODO: Homing = Schlitten weiß, wo er ist
     def _homing_ok(self, status: dict) -> bool:
         return bool((status or {}).get("homing_ok", False))
 
@@ -133,6 +133,7 @@ class MixEngine:
 
         raise RuntimeError(f"{context}: Pumpe hat nicht gestartet. Status={last}")
 
+#TODO: Homing= er weiß, wo Schlitten steht
     def ensure_homed(self):
         st = self._refresh_status()
 
@@ -140,6 +141,7 @@ class MixEngine:
         pos = self._position_mm(st)
 
         needs_home = (not homing_ok)
+        #Unnötig, da Homing definiert, dass Schlitten weiß, wo er ist
         if pos is not None and pos != self.HOME_POSITION_MM:
             needs_home = True
 
