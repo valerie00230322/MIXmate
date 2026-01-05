@@ -1,5 +1,10 @@
 # Hardware/i2C_logic.py
-# I2C-Kommunikation mit Arduino, wahlweise Simulation (z.B. unter Windows)
+#
+# I2C-Kommunikation mit Arduino, optionaler Simulationsmodus.
+# Simulation ist aktiv, wenn smbus2 nicht verfügbar ist oder simulation=True übergeben wurde.
+#
+# Statusformat (5 Byte):
+# [busy, band, pos_low, pos_high, homing_ok]
 
 import time
 import threading
@@ -24,7 +29,7 @@ CMD_ENTLADEN = 5
 
 class i2C_logic:
     def __init__(self, simulation: bool = True):
-        # Wenn kein smbus existiert (Windows), Simulation erzwingen
+        # Wenn smbus2 nicht existiert (z.B. Windows), wird Simulation erzwungen
         if not SMBUS_AVAILABLE:
             simulation = True
 
@@ -37,7 +42,10 @@ class i2C_logic:
         self.sim_beladen_active = False
         self.sim_entladen_active = False
 
-        # Damit Pumpen in der Simulation nicht blockieren (busy muss beobachtbar sein)
+        # Homing-Status in der Simulation (realistisch: initial unbekannt)
+        self.sim_homing_ok = False
+
+        # Token verhindert, dass alte Pump-Threads einen neuen Pumpvorgang vorzeitig beenden
         self._sim_pump_token = 0
         self._sim_pump_thread = None
 
@@ -53,12 +61,12 @@ class i2C_logic:
             print("[I2C] Simulation aktiv.")
 
     def i2c_write(self, payload: bytes, read_len: int = 0) -> bytes:
-        # In der Simulation wird nur geloggt und Dummy-Bytes zurückgegeben
+        # Simulation: Logging und Dummy-Bytes
         if self.simulation:
             print(f"[SIM I2C] sende {list(payload)}, lese {read_len} Byte")
             return b"\x01" * read_len
 
-        # Echte I2C-Kommunikation
+        # Hardware: Schreiben und optional Lesen
         try:
             write_msg = i2c_msg.write(I2C_ADDR, payload)
 
@@ -80,6 +88,11 @@ class i2C_logic:
             position = max(-32768, min(32767, position))
 
         if self.simulation:
+            # In einer echten Anlage wäre Bewegung ohne homing_ok riskant,
+            # da die Position nicht zuverlässig ist
+            if not self.sim_homing_ok:
+                print("[SIM WARN] Bewegung ohne homing_ok (Positionsreferenz unbekannt)")
+
             print(f"[SIM] bewege auf Position {position}")
             self.sim_busy = True
 
@@ -102,7 +115,11 @@ class i2C_logic:
             print("[SIM] homing...")
             self.sim_busy = True
             time.sleep(1)
+
+            # Homing setzt die Referenz; je nach Mechanik endet das oft bei Position 0
             self.sim_position = 0
+            self.sim_homing_ok = True
+
             self.sim_busy = False
             print("[SIM] Homing fertig")
             return
@@ -127,15 +144,14 @@ class i2C_logic:
             print(f"[SIM] Pumpe {pump_id} läuft {seconds}s")
             self.sim_last_pump = (pump_id, seconds)
 
-            # busy sofort setzen, damit die MixEngine den Pump-Start erkennt
+            # busy sofort setzen, damit die Steuerlogik den Pump-Start erkennt
             self.sim_busy = True
 
-            # Token verhindert, dass alte Threads einen neuen Pumpvorgang "abschalten"
             self._sim_pump_token += 1
             token = self._sim_pump_token
 
             def finish():
-                # Im SIM nicht ewig warten, aber lang genug, damit busy gepollt werden kann
+                # Simulation: busy bleibt lang genug aktiv, um Polling zu ermöglichen
                 time.sleep(min(seconds, 1.0))
                 if token == self._sim_pump_token:
                     self.sim_busy = False
@@ -175,7 +191,7 @@ class i2C_logic:
             busy = 1 if self.sim_busy else 0
             band = 1 if self.sim_beladen_active else 0
             pos = int(self.sim_position) & 0xFFFF
-            homing = 1
+            homing = 1 if self.sim_homing_ok else 0
             return bytes([busy, band, pos & 0xFF, (pos >> 8) & 0xFF, homing])
 
         try:

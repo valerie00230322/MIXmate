@@ -1,4 +1,12 @@
 # Services/mix_engine.py
+#
+# Ablauf:
+# - StatusMonitor pollt regelmäßig den Arduino-Status, um I2C-Kollisionen zu vermeiden.
+# - ensure_homed() stellt sicher, dass der Arduino eine gültige Referenz hat (homing_ok == True).
+# - Homing bedeutet: Positionsreferenz ist bekannt, nicht: Schlitten steht auf Position 0.
+# - move_to_position() fährt den Schlitten auf eine Zielposition (in mm).
+# - _dispense() steuert eine Pumpe für eine berechnete Zeitdauer an.
+# - mix_cocktail() führt die Rezeptschritte sequentiell aus: Position anfahren, dann pumpen.
 
 from Hardware.i2C_logic import i2C_logic
 from Services.status_service import StatusService
@@ -7,16 +15,18 @@ import time
 
 
 class MixEngine:
-    # hohe Timeouts (wie gewünscht)
+    # hohe Timeouts
     HOME_TIMEOUT = 1800
     MOVE_TIMEOUT = 1800
     PUMP_TIMEOUT_EXTRA = 1000
-    HOME_POSITION_MM = 0 #Homing = Schlitten weiß wo er ist
 
-    # Start-Handshake: kann hoch sein, wird aber robuster gemacht
+    # Park-/Nullposition (optional verwendbar), nicht gleichbedeutend mit "homing"
+    HOME_POSITION_MM = 0
+
+    # Start-Handshake: busy/Positionsänderung muss innerhalb dieser Zeit sichtbar werden
     BUSY_START_TIMEOUT = 1800
 
-    # nach Homing warten wir zusätzlich, bis homing_ok wirklich 1 ist
+    # nach Homing warten, bis homing_ok stabil 1 ist
     POST_HOME_STATUS_SYNC_TIMEOUT = 180
 
     # Toleranz in mm für Positionserreichung
@@ -33,8 +43,9 @@ class MixEngine:
 
     def _busy(self, status: dict) -> bool:
         return bool((status or {}).get("busy", False))
-    #TODO: Homing = Schlitten weiß, wo er ist
+
     def _homing_ok(self, status: dict) -> bool:
+        # homing_ok bedeutet: der Controller kennt eine gültige Positionsreferenz
         return bool((status or {}).get("homing_ok", False))
 
     def _position_mm(self, status: dict):
@@ -62,6 +73,7 @@ class MixEngine:
 
         while time.time() - start < timeout_s:
             last = self._refresh_status()
+            # Homing gilt als abgeschlossen, wenn busy=0 und homing_ok=1
             if (not self._busy(last)) and self._homing_ok(last):
                 return
             time.sleep(0.2)
@@ -84,6 +96,7 @@ class MixEngine:
                 except Exception:
                     pos_i = None
 
+                # Ziel ist erreicht, wenn Position innerhalb Toleranz liegt und busy=0 ist
                 if pos_i is not None and abs(pos_i - target_mm) <= tol_mm and (not self._busy(last)):
                     return
 
@@ -93,7 +106,7 @@ class MixEngine:
 
     def _wait_move_started(self, old_pos_mm: int, timeout_s: float, context: str):
         """
-        Start erkannt, wenn:
+        Start gilt als erkannt, wenn:
         - busy == 1, oder
         - Position sich vom alten Wert unterscheidet
         """
@@ -119,8 +132,8 @@ class MixEngine:
 
     def _wait_pump_started(self, timeout_s: float, context: str):
         """
-        Pump-Start: hier haben wir kein separates Statusbit.
-        Wir akzeptieren busy==1 als Startsignal.
+        Pump-Start: es existiert kein separates Statusbit.
+        busy==1 wird als Startsignal verwendet.
         """
         start = time.time()
         last = None
@@ -133,20 +146,21 @@ class MixEngine:
 
         raise RuntimeError(f"{context}: Pumpe hat nicht gestartet. Status={last}")
 
-#TODO: Homing= er weiß, wo Schlitten steht
     def ensure_homed(self):
+        """
+        Stellt sicher, dass eine gültige Referenz vorhanden ist.
+        homing_ok == True bedeutet: der Controller kennt die Position im Koordinatensystem.
+        Die aktuelle Position kann dabei ungleich 0 sein.
+        """
         st = self._refresh_status()
 
         homing_ok = self._homing_ok(st)
-        pos = self._position_mm(st)
 
+        # Homing ist nur erforderlich, wenn keine Referenz vorhanden ist
         needs_home = (not homing_ok)
-        #Unnötig, da Homing definiert, dass Schlitten weiß, wo er ist
-        if pos is not None and pos != self.HOME_POSITION_MM:
-            needs_home = True
 
         if not needs_home:
-            print("[MixEngine] Schlitten ist bereits gehomed")
+            print("[MixEngine] Schlitten ist bereits gehomed (Position kann != 0 sein)")
             return
 
         print("[MixEngine] Schlitten ist nicht gehomed, starte Homing")
@@ -156,9 +170,10 @@ class MixEngine:
         old_pos = self._position_mm(self._refresh_status())
         self.monitor.run_i2c(self.i2c.home)
 
-        # Homing-Start: busy oder Positionsänderung (falls Position beim Homing kurz anders wird)
+        # Homing-Start: busy oder Positionsänderung (je nach Arduino-Implementierung)
         self._wait_move_started(old_pos, self.BUSY_START_TIMEOUT, "Homing Start")
 
+        # Ende: busy=0, danach zusätzlich warten bis homing_ok=1
         self._wait_until_idle(self.HOME_TIMEOUT, "Homing nach Start")
         self._wait_for_homing_ok(self.POST_HOME_STATUS_SYNC_TIMEOUT, "Status-Sync nach Homing")
 
@@ -170,19 +185,32 @@ class MixEngine:
 
         target_mm = int(target_mm)
 
+        # Vorher warten, bis der Controller nicht busy ist
         self._wait_until_idle(self.MOVE_TIMEOUT, "Bewegung vor Start")
 
         st = self._refresh_status()
         old_pos = self._position_mm(st)
 
+        # Wenn Position bekannt und bereits am Ziel (inkl. Toleranz), wird kein Move gesendet
+        if old_pos is not None:
+            try:
+                old_pos_i = int(old_pos)
+            except Exception:
+                old_pos_i = None
+
+            if old_pos_i is not None and abs(old_pos_i - target_mm) <= self.POSITION_TOL_MM:
+                print(f"[MixEngine] Zielposition {target_mm} bereits erreicht, Bewegung wird übersprungen")
+                return
+
         print(f"[MixEngine] Fahre Schlitten von {old_pos} nach {target_mm}")
 
+        # Fahrbefehl senden
         self.monitor.run_i2c(self.i2c.move_to_position, target_mm)
 
-        # Start-Handshake robuster: busy oder Positionsänderung
+        # Start-Handshake: busy oder Positionsänderung
         self._wait_move_started(old_pos, self.BUSY_START_TIMEOUT, "Bewegung Start")
 
-        # Ende: Position muss erreicht sein und busy=0
+        # Ende: Position erreicht und busy=0
         self._wait_until_position_reached(
             target_mm=target_mm,
             timeout_s=self.MOVE_TIMEOUT,
@@ -192,14 +220,15 @@ class MixEngine:
 
         print("[MixEngine] Position erreicht")
 
+
     def _dispense(self, pump_number: int, seconds: int):
         seconds = int(seconds)
-        timeout = seconds + self.PUMP_TIMEOUT_EXTRA
+        timeout = seconds + self.PUMP_TIMEOUT_EXTRA # extra Zeit für Start/Stop
 
         self._wait_until_idle(timeout, "Pumpen vor Start")
 
         print(f"[MixEngine] Starte Pumpe {pump_number} für {seconds} Sekunden")
-        self.monitor.run_i2c(self.i2c.activate_pump, int(pump_number), seconds)
+        self.monitor.run_i2c(self.i2c.activate_pump, int(pump_number), seconds) 
 
         self._wait_pump_started(self.BUSY_START_TIMEOUT, "Pumpen Start")
         self._wait_until_idle(timeout, "Pumpen nach Start")
@@ -221,7 +250,7 @@ class MixEngine:
             pump_number = item["pump_number"]
             flow_rate = item["flow_rate_ml_s"]
 
-            # Feld heißt so, ist bei euch aber mm (Arduino rechnet mm -> steps)
+            # Feldname "position_steps" wird als mm interpretiert
             position_mm = item["position_steps"]
 
             if pump_number is None or flow_rate is None or float(flow_rate) <= 0:
