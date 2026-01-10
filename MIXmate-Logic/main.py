@@ -16,7 +16,8 @@ class MIXmate:
         delay_secs= 2.0
 
         #wenn Low --> relais ist EIN
-        relay_board = RelayBoard(pins= first_pair + second_pair, is_active_low=True)
+        relay_board = RelayBoard(pins=first_pair + second_pair, active_low=True)
+
         StartupSequenceService(relay_board).run(first_pair, second_pair, delay_secs)
         #Initialisierung der Controller
         mix_controller = MixController()
