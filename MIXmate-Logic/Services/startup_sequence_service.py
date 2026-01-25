@@ -13,15 +13,15 @@ class StartupSequenceService:
         self.relay_board.set_many(first_pair, True)
         time.sleep(delay_secs)
 
-        print("Ausschalten des ersten Relais-Paares...")
+        """ print("Ausschalten des ersten Relais-Paares...")
         self.relay_board.set_many(first_pair, False)
-        time.sleep(0.5)
+        time.sleep(0.5) """
 
         print("Einschalten des zweiten Relais-Paares...")
         self.relay_board.set_many(second_pair, True)
         time.sleep(delay_secs)
 
-        print("Ausschalten des zweiten Relais-Paares...")
-        self.relay_board.set_many(second_pair, False)
+        """ print("Ausschalten des zweiten Relais-Paares...")
+        self.relay_board.set_many(second_pair, False) """
 
         print("Initialisierungssequenz abgeschlossen.")
