@@ -1,0 +1,1 @@
+# Dieser Folder ist zur Ablage von Bildern usw. zuständig
