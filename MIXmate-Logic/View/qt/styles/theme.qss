@@ -1,0 +1,46 @@
+QWidget {
+  background: #0b0b0b;
+  color: #ffffff;
+  font-family: Segoe UI;
+}
+
+#Card {
+  background: #121212;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 18px;
+}
+
+#TitleLabel { font-size: 46px; font-weight: 700; }
+#SubtitleLabel { font-size: 18px; color: rgba(255,255,255,0.75); }
+#SectionTitle { font-size: 22px; font-weight: 600; }
+#HintLabel { color: rgba(255,255,255,0.55); }
+
+#MenuButton {
+  background: #1a1a1a;
+  border: 1px solid rgba(0,255,213,0.35);
+  border-radius: 18px;
+  padding: 18px;
+  font-size: 22px;
+  text-align: left;
+}
+
+#MenuButton:pressed {
+  background: rgba(0,255,213,0.95);
+  color: #000000;
+}
+
+#DangerButton {
+  border: 1px solid rgba(255,80,80,0.5);
+}
+#DangerButton:pressed {
+  background: rgba(255,80,80,0.95);
+  color: #000000;
+}
+
+#LogoFallback {
+  background: #1a1a1a;
+  border-radius: 18px;
+  font-size: 26px;
+  font-weight: 700;
+  color: rgba(0,255,213,0.95);
+}

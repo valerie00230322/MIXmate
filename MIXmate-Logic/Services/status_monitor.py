@@ -41,12 +41,9 @@ class StatusMonitor:
         while not self._stop_event.is_set():
             self.refresh()  # liest echten Status und aktualisiert Cache
             time.sleep(self.poll_s)
-
+# LIest status einmal direkt vom Arduino und aktualisiert den Cache
     def refresh(self) -> dict:
-        """
-        Liest den Status genau einmal direkt vom Arduino (unter Lock),
-        interpretiert ihn und aktualisiert den Cache.
-        """
+        
         with self._lock:
             raw = self.i2c.getstatus_raw()
             self._latest = self.status_service.parse_status(raw)
@@ -55,12 +52,9 @@ class StatusMonitor:
     def get_latest(self) -> dict:
         with self._lock:
             return dict(self._latest)
-
+# Führt eine I2C-Aktion aus.
     def run_i2c(self, fn, *args, refresh_after: bool = True, **kwargs):
-        """
-        Führt eine I2C-Aktion exklusiv aus.
-        Optional: direkt danach einmal Status lesen, damit busy/position sofort aktuell sind.
-        """
+        
         with self._lock:
             result = fn(*args, **kwargs)
 

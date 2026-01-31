@@ -77,7 +77,7 @@ class HomeScreen(QWidget):
         menu_layout.addWidget(spacer)
 
         # Exit-Button unten
-        exit_btn = self._menu_button("⏻  Exit", self.do_exit.emit)
+        exit_btn = self._menu_button("Exit", self.do_exit.emit)
         exit_btn.setObjectName("DangerButton")
         menu_layout.addWidget(exit_btn)
 
@@ -91,7 +91,7 @@ class HomeScreen(QWidget):
 
     def _menu_button(self, text: str, on_click) -> QPushButton:
         btn = QPushButton(text)
-        btn.setMinimumHeight(84)  # Touch-friendly
+        btn.setMinimumHeight(84)  # große Buttons für Touchbedienung
         btn.setCursor(Qt.PointingHandCursor)
         btn.clicked.connect(on_click)
         btn.setObjectName("MenuButton")
