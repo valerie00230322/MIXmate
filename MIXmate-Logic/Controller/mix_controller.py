@@ -15,3 +15,13 @@ class MixController:
 
     def get_status(self):
         return self.engine.get_status()
+    
+    #für gui : vorbereiten des DB Teils im UI Thread--> verhindert gui freeze
+    def prepare_mix(self, cocktail_id: int):
+        mix_data = self.model.get_full_mix_data(cocktail_id)
+        if not mix_data:
+            raise ValueError(f"Kein Rezept für Cocktail-ID {cocktail_id} gefunden.")
+        return mix_data
+   
+    def run_mix(self, mix_data, factor: float = 1.0):
+        return self.engine.mix_cocktail(mix_data, factor)
