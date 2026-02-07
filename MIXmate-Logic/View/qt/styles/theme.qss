@@ -1,46 +1,77 @@
-QWidget {
-  background: #0b0b0b;
-  color: #ffffff;
-  font-family: Segoe UI;
+/* Startscreen Background */
+#HomeScreen {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+    stop:0 #07070a, stop:0.55 #0b0b0f, stop:1 #071324);
 }
 
-#Card {
-  background: #121212;
+/* Cards */
+QFrame#HeroCard, QFrame#MenuCard {
+  background: rgba(18,18,18,210);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 20px;
+}
+
+/* Hero */
+#HomeTitle { font-size: 46px; font-weight: 900; }
+#HomeSubtitle { font-size: 18px; color: rgba(255,255,255,0.70); }
+
+#HeroLogo {
+  background: rgba(255,255,255,0.05);
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 18px;
 }
 
-#TitleLabel { font-size: 46px; font-weight: 700; }
-#SubtitleLabel { font-size: 18px; color: rgba(255,255,255,0.75); }
-#SectionTitle { font-size: 22px; font-weight: 600; }
-#HintLabel { color: rgba(255,255,255,0.55); }
-
-#MenuButton {
-  background: #1a1a1a;
-  border: 1px solid rgba(0,255,213,0.35);
-  border-radius: 18px;
-  padding: 18px;
-  font-size: 22px;
-  text-align: left;
-}
-
-#MenuButton:pressed {
-  background: rgba(0,255,213,0.95);
-  color: #000000;
-}
-
-#DangerButton {
-  border: 1px solid rgba(255,80,80,0.5);
-}
-#DangerButton:pressed {
-  background: rgba(255,80,80,0.95);
-  color: #000000;
-}
-
 #LogoFallback {
-  background: #1a1a1a;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(0,255,213,0.25);
   border-radius: 18px;
-  font-size: 26px;
-  font-weight: 700;
+  font-size: 22px;
+  font-weight: 800;
   color: rgba(0,255,213,0.95);
+}
+
+#StatusChip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(0,255,213,0.10);
+  border: 1px solid rgba(0,255,213,0.25);
+  color: rgba(0,255,213,0.95);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+#SectionTitle { font-size: 22px; font-weight: 800; }
+#HintLabel { color: rgba(255,255,255,0.55); font-size: 14px; }
+
+/* Tiles */
+QFrame[role="tile"] {
+  background: rgba(25,25,25,230);
+  border: 1px solid rgba(0,255,213,0.25);
+  border-radius: 18px;
+}
+
+QFrame[role="tile"][down="true"] {
+  background: rgba(0,255,213,230);
+  border: 1px solid rgba(0,255,213,230);
+}
+
+QFrame[role="tile_danger"] {
+  border: 1px solid rgba(255,80,80,0.45);
+}
+
+QFrame[role="tile_danger"][down="true"] {
+  background: rgba(255,80,80,230);
+  border: 1px solid rgba(255,80,80,230);
+}
+
+/* Tile Text */
+#TileIcon { font-size: 26px; }
+#TileTitle { font-size: 20px; font-weight: 800; }
+#TileSubtitle { font-size: 14px; color: rgba(255,255,255,0.65); }
+#TileArrow { font-size: 26px; color: rgba(255,255,255,0.35); }
+
+/* Wenn gedrückt: Text dunkel */
+QFrame[role="tile"][down="true"] QLabel,
+QFrame[role="tile_danger"][down="true"] QLabel {
+  color: #000000;
 }

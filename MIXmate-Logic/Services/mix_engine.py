@@ -3,7 +3,7 @@
 # Ablauf:
 # - StatusMonitor pollt regelmäßig den Arduino-Status, um I2C-Kollisionen zu vermeiden.
 # - ensure_homed() stellt sicher, dass der Arduino eine gültige Referenz hat (homing_ok == True).
-# - Homing bedeutet: Positionsreferenz ist bekannt, nicht: Schlitten steht auf Position 0.
+# - Homing bedeutet: Positionsreferenz ist bekannt, nicht: Schlitten steht auf eine Zielposition (in mm).
 # - move_to_position() fährt den Schlitten auf eine Zielposition (in mm).
 # - _dispense() steuert eine Pumpe für eine berechnete Zeitdauer an.
 # - mix_cocktail() führt die Rezeptschritte sequentiell aus: Position anfahren, dann pumpen.
@@ -17,15 +17,15 @@ import time
 
 class MixEngine:
     # hohe Timeouts
-    HOME_TIMEOUT = 1800
-    MOVE_TIMEOUT = 1800
+    HOME_TIMEOUT = 1800 #30min Timeout, manchmal brauchts länger haha
+    MOVE_TIMEOUT = 1800 #zu lang, lieber zu lang als zu kurz
     PUMP_TIMEOUT_EXTRA = 1000
 
     # Park-/Nullposition (optional verwendbar), nicht gleichbedeutend mit "homing"
     HOME_POSITION_MM = 0
 
     # Start-Handshake: busy/Positionsänderung muss innerhalb dieser Zeit sichtbar werden
-    BUSY_START_TIMEOUT = 1800
+    BUSY_START_TIMEOUT = 1800 #wieder sehr hoch
 
     # nach Homing warten, bis homing_ok stabil 1 ist
     POST_HOME_STATUS_SYNC_TIMEOUT = 180
@@ -34,10 +34,24 @@ class MixEngine:
     POSITION_TOL_MM = 0
 
     def __init__(self, simulation: bool = True):
+        self.simulation = simulation
+
         self.i2c = i2C_logic(simulation=simulation)
         self.status_service = StatusService()
         self.monitor = StatusMonitor(self.i2c, self.status_service, poll_s=0.3)
         self.monitor.start()
+
+        # kleine Sim-States, damit im Sim-Modus nicht alles an Arduino-Status hängt
+        self._sim_homing_done = False
+        self._sim_pos_mm = 0
+
+        ##für Simulation Timeouts runtersetzen
+        if simulation:
+            self.HOME_TIMEOUT = 10
+            self.MOVE_TIMEOUT = 10
+            self.PUMP_TIMEOUT_EXTRA = 5
+            self.BUSY_START_TIMEOUT = 5
+            self.POST_HOME_STATUS_SYNC_TIMEOUT = 5
 
     def get_status(self) -> dict:
         return self.monitor.get_latest()
@@ -68,6 +82,7 @@ class MixEngine:
 
         raise RuntimeError(f"{context}: Timeout. busy blieb True. Status={last}")
 
+    # Simulation: Homing, busy und Pumpenstatus sofort setzen, damit die Steuerlogik reagieren kann
     def _wait_for_homing_ok(self, timeout_s: float, context: str):
         start = time.time()
         last = None
@@ -149,12 +164,26 @@ class MixEngine:
 
     def ensure_homed(self):
         """
+        ensure homed macht folgendes:
         Stellt sicher, dass eine gültige Referenz vorhanden ist.
-        homing_ok == True bedeutet: der Controller kennt die Position im Koordinatensystem.
-        Die aktuelle Position kann dabei ungleich 0 sein.
+        homing_ok == True : der Controller kennt die Position im Koordinatensystem.
+        Pos. muss nicht 0 sein, sondern kann an der aktuellen Position liegen. Wichtig ist nur, dass er weiß,wo er ist.
         """
-        st = self._refresh_status()
 
+        # im Sim-Modus nicht auf echte Statusbits warten (die Simulation liefert die oft nicht so wie am Arduino)
+        if self.simulation:
+            if self._sim_homing_done:
+                print("[MixEngine] (SIM) Schlitten ist bereits gehomed")
+                return
+
+            print("[MixEngine] (SIM) starte Homing")
+            self.monitor.run_i2c(self.i2c.home)
+            time.sleep(0.2)
+            self._sim_homing_done = True
+            print("[MixEngine] (SIM) Homing abgeschlossen")
+            return
+
+        st = self._refresh_status()
         homing_ok = self._homing_ok(st)
 
         # Homing ist nur erforderlich, wenn keine Referenz vorhanden ist
@@ -185,6 +214,15 @@ class MixEngine:
             raise ValueError("Zielposition darf nicht None sein")
 
         target_mm = int(target_mm)
+
+        # Sim-Modus: Move ohne Status-Handshakes
+        if self.simulation:
+            print(f"[MixEngine] (SIM) Fahre Schlitten von {self._sim_pos_mm} nach {target_mm}")
+            self.monitor.run_i2c(self.i2c.move_to_position, target_mm)
+            time.sleep(0.1)
+            self._sim_pos_mm = target_mm
+            print("[MixEngine] (SIM) Position erreicht")
+            return
 
         # Vorher warten, bis der Controller nicht busy ist
         self._wait_until_idle(self.MOVE_TIMEOUT, "Bewegung vor Start")
@@ -221,15 +259,22 @@ class MixEngine:
 
         print("[MixEngine] Position erreicht")
 
-
     def _dispense(self, pump_number: int, seconds: int):
         seconds = int(seconds)
         timeout = seconds + self.PUMP_TIMEOUT_EXTRA # extra Zeit für Start/Stop
 
+        # Sim-Modus: Pumpen ohne busy-Handshake
+        if self.simulation:
+            print(f"[MixEngine] (SIM) Starte Pumpe {pump_number} für {seconds} Sekunden")
+            self.monitor.run_i2c(self.i2c.activate_pump, int(pump_number), seconds)
+            time.sleep(0.1)
+            print(f"[MixEngine] (SIM) Pumpe {pump_number} beendet")
+            return
+
         self._wait_until_idle(timeout, "Pumpen vor Start")
 
         print(f"[MixEngine] Starte Pumpe {pump_number} für {seconds} Sekunden")
-        self.monitor.run_i2c(self.i2c.activate_pump, int(pump_number), seconds) 
+        self.monitor.run_i2c(self.i2c.activate_pump, int(pump_number), seconds)
 
         self._wait_pump_started(self.BUSY_START_TIMEOUT, "Pumpen Start")
         self._wait_until_idle(timeout, "Pumpen nach Start")
