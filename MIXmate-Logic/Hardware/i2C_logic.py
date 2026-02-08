@@ -29,7 +29,7 @@ CMD_ENTLADEN = 5
 
 class i2C_logic:
     def __init__(self, simulation: bool = True):
-        # Wenn smbus2 nicht existiert (z.B. Windows), wird Simulation erzwungen
+        # Wenn smbus2 nicht existiert, wird Simulation erzwungen
         if not SMBUS_AVAILABLE:
             simulation = True
 
@@ -42,7 +42,7 @@ class i2C_logic:
         self.sim_beladen_active = False
         self.sim_entladen_active = False
 
-        # Homing-Status in der Simulation (realistisch: initial unbekannt)
+        # Homing-Status in der Simulation 
         self.sim_homing_ok = False
 
         # Token verhindert, dass alte Pump-Threads einen neuen Pumpvorgang vorzeitig beenden
@@ -88,8 +88,7 @@ class i2C_logic:
             position = max(-32768, min(32767, position))
 
         if self.simulation:
-            # In einer echten Anlage wäre Bewegung ohne homing_ok riskant,
-            # da die Position nicht zuverlässig ist
+            
             if not self.sim_homing_ok:
                 print("[SIM WARN] Bewegung ohne homing_ok (Positionsreferenz unbekannt)")
 

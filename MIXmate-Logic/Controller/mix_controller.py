@@ -3,6 +3,7 @@ from Model.mix_model import MixModel
 
 
 class MixController:
+    # nicht vergessen :  sim modus
     def __init__(self, simulation: bool = True, db_path=None):
         self.engine = MixEngine(simulation=simulation)
         self.model = MixModel(db_path=db_path)
