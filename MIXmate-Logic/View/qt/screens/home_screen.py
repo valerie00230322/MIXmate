@@ -5,19 +5,24 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QLabel, QFrame, QSizePolicy, QGraphicsDropShadowEffect
+    QLabel, QFrame, QPushButton, QSizePolicy
 )
 
 
 class MenuTile(QFrame):
     clicked = Signal()
 
-    def __init__(self, badge: str, title: str, subtitle: str = ""):
+    def __init__(self, badge: str, title: str, subtitle: str, accent: str):
         super().__init__()
 
-        # role + down nutzen wir fürs Styling (pressed state)
+        # damit QSS background auf QFrame greift
+        self.setAttribute(Qt.WA_StyledBackground, True)
+
+        # fürs styling + pressed state
         self.setProperty("role", "tile")
+        self.setProperty("accent", accent)
         self.setProperty("down", False)
+
         self.setCursor(Qt.PointingHandCursor)
 
         layout = QHBoxLayout(self)
@@ -40,8 +45,7 @@ class MenuTile(QFrame):
         s.setWordWrap(True)
 
         text_col.addWidget(t)
-        if subtitle:
-            text_col.addWidget(s)
+        text_col.addWidget(s)
 
         arrow = QLabel(">")
         arrow.setObjectName("TileArrow")
@@ -51,11 +55,6 @@ class MenuTile(QFrame):
         layout.addWidget(b, 0)
         layout.addLayout(text_col, 1)
         layout.addWidget(arrow, 0)
-
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(28)
-        shadow.setOffset(0, 8)
-        self.setGraphicsEffect(shadow)
 
     def _set_down(self, down: bool):
         self.setProperty("down", down)
@@ -85,25 +84,28 @@ class HomeScreen(QWidget):
     def __init__(self):
         super().__init__()
         self.setObjectName("HomeScreen")
+        self.setAttribute(Qt.WA_StyledBackground, True)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(32, 28, 32, 28)
+        root.setContentsMargins(28, 24, 28, 24)
         root.setSpacing(16)
 
         hero = QFrame()
         hero.setObjectName("HeroCard")
+        hero.setAttribute(Qt.WA_StyledBackground, True)
+
         hero_l = QHBoxLayout(hero)
-        hero_l.setContentsMargins(22, 18, 22, 18)
-        hero_l.setSpacing(18)
+        hero_l.setContentsMargins(18, 16, 18, 16)
+        hero_l.setSpacing(16)
 
         self.logo = QLabel()
         self.logo.setObjectName("HeroLogo")
-        self.logo.setFixedSize(110, 110)
+        self.logo.setFixedSize(92, 92)
         self.logo.setAlignment(Qt.AlignCenter)
         self._load_logo()
 
         text_col = QVBoxLayout()
-        text_col.setSpacing(6)
+        text_col.setSpacing(4)
 
         title = QLabel("MIXmate")
         title.setObjectName("HomeTitle")
@@ -111,17 +113,12 @@ class HomeScreen(QWidget):
         subtitle = QLabel("die automatische Schankanlage")
         subtitle.setObjectName("HomeSubtitle")
 
-        chip_row = QHBoxLayout()
-        chip_row.setSpacing(10)
-
-        chip = QLabel("READY")
-        chip.setObjectName("StatusChip")
-        chip_row.addWidget(chip, 0, Qt.AlignLeft)
-        chip_row.addStretch(1)
+        self.chip = QLabel("READY")
+        self.chip.setObjectName("StatusChip")
 
         text_col.addWidget(title)
         text_col.addWidget(subtitle)
-        text_col.addLayout(chip_row)
+        text_col.addWidget(self.chip, 0, Qt.AlignLeft)
 
         hero_l.addWidget(self.logo, 0)
         hero_l.addLayout(text_col, 1)
@@ -130,22 +127,24 @@ class HomeScreen(QWidget):
 
         menu = QFrame()
         menu.setObjectName("MenuCard")
+        menu.setAttribute(Qt.WA_StyledBackground, True)
+
         menu_l = QVBoxLayout(menu)
-        menu_l.setContentsMargins(22, 18, 22, 18)
-        menu_l.setSpacing(14)
+        menu_l.setContentsMargins(18, 16, 18, 16)
+        menu_l.setSpacing(12)
 
         menu_title = QLabel("Menü")
         menu_title.setObjectName("SectionTitle")
         menu_l.addWidget(menu_title)
 
         grid = QGridLayout()
-        grid.setHorizontalSpacing(14)
-        grid.setVerticalSpacing(14)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(12)
 
-        t_mix = MenuTile("MIX", "Cocktail mischen", "Rezept auswählen und starten")
-        t_status = MenuTile("LIVE", "Status (live)", "Busy, Position, Homing, Fehler")
-        t_cal = MenuTile("CAL", "Kalibrierung", "Flowrate / Pumpen einstellen")
-        t_admin = MenuTile("ADMIN", "Admin", "Zutaten, Cocktails, Rezepte")
+        t_mix = MenuTile("MIX", "Cocktail mischen", "Rezept auswählen und starten", accent="teal")
+        t_status = MenuTile("LIVE", "Status (live)", "Busy, Position, Homing, Fehler", accent="blue")
+        t_cal = MenuTile("CAL", "Kalibrierung", "Flowrate / Pumpen einstellen", accent="purple")
+        t_admin = MenuTile("ADMIN", "Admin", "Zutaten, Cocktails, Rezepte", accent="orange")
 
         t_mix.clicked.connect(self.go_mix.emit)
         t_status.clicked.connect(self.go_status.emit)
@@ -162,16 +161,17 @@ class HomeScreen(QWidget):
         footer = QHBoxLayout()
         footer.setSpacing(12)
 
-        hint = QLabel("Touch-optimiert • Raspberry Pi")
+        hint = QLabel("Touch-optimiert  Raspberry Pi")
         hint.setObjectName("HintLabel")
         hint.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
-        exit_tile = MenuTile("EXIT", "Exit", "Programm beenden")
-        exit_tile.setProperty("role", "tile_danger")
-        exit_tile.clicked.connect(self.do_exit.emit)
+        exit_btn = QPushButton("Exit")
+        exit_btn.setObjectName("ExitButton")
+        exit_btn.setMinimumHeight(52)
+        exit_btn.clicked.connect(self.do_exit.emit)
 
         footer.addWidget(hint, 1)
-        footer.addWidget(exit_tile, 0)
+        footer.addWidget(exit_btn, 0)
 
         menu_l.addLayout(footer)
 
@@ -184,14 +184,14 @@ class HomeScreen(QWidget):
         if logo_path.exists():
             pix = QPixmap(str(logo_path))
             if not pix.isNull():
-                pix = pix.scaled(
-                    self.logo.width(),
-                    self.logo.height(),
-                    Qt.KeepAspectRatio,
-                    Qt.SmoothTransformation,
+                self.logo.setPixmap(
+                    pix.scaled(
+                        self.logo.width(),
+                        self.logo.height(),
+                        Qt.KeepAspectRatio,
+                        Qt.SmoothTransformation,
+                    )
                 )
-                self.logo.setPixmap(pix)
-                self.logo.setText("")
                 return
 
         self.logo.setText("MIX\nmate")

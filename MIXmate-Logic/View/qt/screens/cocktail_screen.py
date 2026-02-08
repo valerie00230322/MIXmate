@@ -3,7 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QObject, Signal, QThread, QTimer
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
-    QScrollArea, QProgressBar, QSizePolicy
+    QScrollArea, QProgressBar
 )
 
 
@@ -27,6 +27,9 @@ class MixWorker(QObject):
 class CocktailScreen(QWidget):
     def __init__(self, mix_controller, cocktail_model, on_back):
         super().__init__()
+        self.setObjectName("CocktailScreen")
+        self.setAttribute(Qt.WA_StyledBackground, True)
+
         self.mix_controller = mix_controller
         self.cocktail_model = cocktail_model
         self.on_back = on_back
@@ -38,16 +41,17 @@ class CocktailScreen(QWidget):
         root.setContentsMargins(24, 24, 24, 24)
         root.setSpacing(14)
 
-        # Header (Zurück + Titel)
         header = QFrame()
         header.setObjectName("Header")
+        header.setAttribute(Qt.WA_StyledBackground, True)
+
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(12)
 
-        self.back_btn = QPushButton("⬅ Zurück")
+        self.back_btn = QPushButton("Zurück")
         self.back_btn.setProperty("role", "nav")
-        self.back_btn.setMinimumHeight(70)
+        self.back_btn.setMinimumHeight(52)
         self.back_btn.clicked.connect(self.on_back)
 
         title = QLabel("Cocktail auswählen")
@@ -60,19 +64,26 @@ class CocktailScreen(QWidget):
         header_layout.addWidget(self.back_btn)
         header_layout.addWidget(title, 1)
         header_layout.addWidget(right_spacer)
+
         root.addWidget(header)
 
-        # Card mit Scroll-Liste
         card = QFrame()
         card.setObjectName("Card")
+        card.setAttribute(Qt.WA_StyledBackground, True)
+
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(18, 18, 18, 18)
         card_layout.setSpacing(12)
 
         self.scroll = QScrollArea()
+        self.scroll.setObjectName("CocktailScroll")
         self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.NoFrame)
 
         self.list_container = QWidget()
+        self.list_container.setObjectName("CocktailList")
+        self.list_container.setAttribute(Qt.WA_StyledBackground, True)
+
         self.list_layout = QVBoxLayout(self.list_container)
         self.list_layout.setContentsMargins(0, 0, 0, 0)
         self.list_layout.setSpacing(10)
@@ -88,9 +99,9 @@ class CocktailScreen(QWidget):
 
         root.addWidget(card, 1)
 
-        # Overlay (Please wait / Fehler / Fertig)
         self.overlay = QFrame(self)
         self.overlay.setObjectName("Overlay")
+        self.overlay.setAttribute(Qt.WA_StyledBackground, True)
         self.overlay.setVisible(False)
 
         ov = QVBoxLayout(self.overlay)
@@ -104,7 +115,7 @@ class CocktailScreen(QWidget):
 
         self.busy = QProgressBar()
         self.busy.setTextVisible(False)
-        self.busy.setRange(0, 0)  # indeterminate
+        self.busy.setRange(0, 0)
         self.busy.setFixedHeight(10)
         ov.addWidget(self.busy)
 
@@ -148,13 +159,12 @@ class CocktailScreen(QWidget):
         self.list_layout.addStretch(1)
 
     def _add_cocktail_button(self, cocktail_id: int, name: str):
-        btn = QPushButton(f"🍸  {name}")
+        btn = QPushButton(name)
         btn.setProperty("role", "cocktail")
-        btn.setMinimumHeight(90)
+        btn.setMinimumHeight(72)
         btn.setCursor(Qt.PointingHandCursor)
         btn.clicked.connect(lambda _, cid=cocktail_id: self.start_mix(cid))
 
-        # vor dem Stretch einfügen
         self.list_layout.insertWidget(self.list_layout.count() - 1, btn)
 
     def start_mix(self, cocktail_id: int):
@@ -164,7 +174,7 @@ class CocktailScreen(QWidget):
             self._show_overlay("Fehler!", str(e), show_busy=False)
             return
 
-        self._show_overlay("Please wait…\nCocktail wird gemischt", "", show_busy=True)
+        self._show_overlay("Bitte warten…", "Cocktail wird gemischt", show_busy=True)
 
         self.thread = QThread()
         self.worker = MixWorker(self.mix_controller, mix_data)
@@ -181,7 +191,7 @@ class CocktailScreen(QWidget):
         self.thread.start()
 
     def _mix_done(self, recipe: list):
-        self._show_overlay("Fertig ✅", "", show_busy=False)
+        self._show_overlay("Fertig", "", show_busy=False)
         QTimer.singleShot(1200, self._hide_overlay)
 
     def _mix_failed(self, msg: str):
@@ -189,6 +199,7 @@ class CocktailScreen(QWidget):
 
     def _show_overlay(self, title: str, details: str, show_busy: bool):
         self.overlay.setVisible(True)
+        self.overlay.raise_()
         self.wait_label.setText(title)
         self.result_label.setText(details)
         self.busy.setVisible(show_busy)
