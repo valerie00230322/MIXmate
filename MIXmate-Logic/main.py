@@ -6,6 +6,7 @@ from Controller.admin_controller import AdminController
 
 # wird für relais benötigt
 """
+blablabla
 from Hardware.relay_board import RelayBoard
 from Services.startup_sequence_service import StartupSequenceService
 """
