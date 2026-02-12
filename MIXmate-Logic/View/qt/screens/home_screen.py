@@ -160,17 +160,18 @@ class HomeScreen(QWidget):
 
         footer = QHBoxLayout()
         footer.setSpacing(12)
-
+        """
+        Hier könnte ein Copyright-Hinweis oder ähnliches hin kommen.
         hint = QLabel("Touch-optimiert  Raspberry Pi")
         hint.setObjectName("HintLabel")
         hint.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-
+        """
         exit_btn = QPushButton("Exit")
         exit_btn.setObjectName("ExitButton")
         exit_btn.setMinimumHeight(52)
         exit_btn.clicked.connect(self.do_exit.emit)
 
-        footer.addWidget(hint, 1)
+        #footer.addWidget(hint, 1)
         footer.addWidget(exit_btn, 0)
 
         menu_l.addLayout(footer)
@@ -179,7 +180,7 @@ class HomeScreen(QWidget):
 
     def _load_logo(self) -> None:
         assets_dir = Path(__file__).resolve().parents[1] / "assets"
-        logo_path = assets_dir / "mixmateLogo by chat.png"
+        logo_path = assets_dir / "mixmateLogo by chatBIG.png"
 
         if logo_path.exists():
             pix = QPixmap(str(logo_path))
