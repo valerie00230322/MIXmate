@@ -20,9 +20,9 @@ class MIXmate:
         delay_secs= 2.0
 
         #wenn Low --> relais ist EIN
-        relay_board = RelayBoard(pins=first_pair + second_pair, active_low=True)
+        self.relay_board = RelayBoard(pins=self.first_pair + self.second_pair, active_low=True)
         
-        StartupSequenceService(relay_board).run(first_pair, second_pair, delay_secs)
+        StartupSequenceService(self.relay_board).run(self.first_pair, self.second_pair, delay_secs)
         """
         #Initialisierung der Controller
         self.mix_controller = MixController()
@@ -40,4 +40,5 @@ class MIXmate:
 
 
 if __name__ == "__main__":
-    MIXmate().run()
+    app=MIXmate()
+    app.run()
