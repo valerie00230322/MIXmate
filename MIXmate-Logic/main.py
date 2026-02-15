@@ -15,14 +15,14 @@ class MIXmate:
         """
         bei sim modus unnötig
         #wird für Relais benötigt
-        first_pair = [17, 27]
-        second_pair = [22, 23]
-        delay_secs= 2.0
+        self.first_pair = [17, 27]
+        self.second_pair = [22, 23]
+        self.delay_secs= 2.0
 
         #wenn Low --> relais ist EIN
         self.relay_board = RelayBoard(pins=self.first_pair + self.second_pair, active_low=True)
         
-        StartupSequenceService(self.relay_board).run(self.first_pair, self.second_pair, delay_secs)
+        StartupSequenceService(self.relay_board).run(self.first_pair, self.second_pair, self.delay_secs)
         """
         #Initialisierung der Controller
         self.mix_controller = MixController()
