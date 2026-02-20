@@ -3,6 +3,7 @@ from PySide6.QtWidgets import QMainWindow, QStackedWidget
 from View.qt.screens.home_screen import HomeScreen
 from View.qt.screens.cocktail_screen import CocktailScreen
 from Model.cocktail_model import CocktailModel
+from View.qt.screens.admin_screen import AdminScreen
 
 
 class MainWindow(QMainWindow):
@@ -15,7 +16,7 @@ class MainWindow(QMainWindow):
         self.pump_controller = pump_controller
         self.admin_controller = admin_controller
 
-        # QStackedWidget verwaltet die einzelnen Screens (Home, Cocktails, ...)
+        # QStackedWidget verwaltet  einzelnen Screens (Home, Cocktails, ...)
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
 
@@ -36,11 +37,18 @@ class MainWindow(QMainWindow):
             cocktail_model=self.cocktail_model,
             on_back=self.show_home
         )
+    
+        self.admin_screen = AdminScreen(
+        admin_controller=self.admin_controller,
+        pump_controller=self.pump_controller,
+        on_back=self.show_home
+        )
+    
 
-        # Screens im Stack registrieren (Reihenfolge ist egal, solange alle hinzugefügt werden)
+        # Screens im Stack hinzufügen (Reihenfolge ist egal, solange alle hinzugefügt werden)
         self.stack.addWidget(self.home)
         self.stack.addWidget(self.cocktails)
-
+        self.stack.addWidget(self.admin_screen)
         # Startansicht
         self.show_home()
 
@@ -62,5 +70,5 @@ class MainWindow(QMainWindow):
         print("Calibration Screen öffnen")
 
     def show_admin(self):
-        # Platzhalter: hier kommt später ein eigener Admin-Screen rein
-        print("Admin Screen öffnen")
+        self.admin_screen.show_menu()
+        self.stack.setCurrentWidget(self.admin_screen)
