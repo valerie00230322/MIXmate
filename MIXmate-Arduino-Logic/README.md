@@ -29,3 +29,11 @@ Wenn ein Glas näher als *DISTANCE_THRESHOLD_CM* (5 cm) kommt, stoppt das Förde
      - Beim Beladen wird Referenzdistanz gespeichert - dann wird regelmäßig gemessen, ob sich Glas bewegt hat
      - Das bedeutet: zusätzliches Flag wird Implementiert --> Flag: Glas da / Glas verschoben
 
+// Neu: Status ... --> 7 Byte
+out[0]=busy, out[1]=band, out[2]=pos_low, out[3]=pos_high, out[4]=homing_ok,
+out[5]=glass_present, out[6]=glass_moved
+Wire.write(out, 7);
+
+beim ersten “Glas erkannt” → baselineDist speichern
+
+danach regelmäßig messen → wenn abs(dist - baselineDist) > MOVE_THRESHOLD für mehrere Messungen → glass_moved = true
