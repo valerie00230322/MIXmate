@@ -1,0 +1,11 @@
+{
+    "python.defaultInterpreterPath": "${workspaceFolder}/kivyenv/bin/python",
+    "python.pythonPath": "${workspaceFolder}/kivyenv/bin/python",
+    "python.venvPath": "${workspaceFolder}/kivyenv",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/kivyenv/lib/python3.9/site-packages"
+    ],
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportMissingImports": "none"
+    }
+}
