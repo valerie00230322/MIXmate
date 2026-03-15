@@ -1,0 +1,10 @@
+**/GUI-Logic/Controller/__pycache__
+**/GUI-Logic/View/__pycache__
+**/GUI-Logic/Model/__pycache__
+**/MIXmate-Logic/Controller/__pycache__
+**/MIXmate-Logic/View/__pycache__
+**/MIXmate-Logic/Model/__pycache__
+**/MIXmate-Logic/Services/__pycache__
+**/MIXmate-Logic/Hardware/__pycache__
+# Python virtual environment
+.venv/
