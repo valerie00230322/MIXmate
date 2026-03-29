@@ -8,3 +8,4 @@
 **/MIXmate-Logic/Hardware/__pycache__
 # Python virtual environment
 .venv/
+**/MIXmate-Logic/__pycache__
